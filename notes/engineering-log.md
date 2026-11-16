@@ -257,3 +257,45 @@ Two changes:
 - **Cost:** the first compile took 256 s. It's now cached in the `aio-compile-cache` volume.
 - vLLM still wins on throughput with many users. Our engine serves one request at a time; batching
   is a later milestone.
+
+## Milestone 2: low-bit weights and our first custom kernel
+
+### 15. Inside Google's QAT int4 checkpoint (`google/gemma-4-E2B-it-qat-w4a16-ct` @ 971342c)
+- Every Linear layer is int4: symmetric, group size 32, packed 8 values per int32 along K
+  (`weight_packed` [N, K/8], `weight_scale` [N, K/32] in bf16).
+- **`"ignore": ["lm_head"]`**: the lm_head stays BF16, and so do both embedding tables.
+  So every engine that serves this checkpoint as-is still reads the 0.81 GB bf16 lm_head on
+  every token. That's where we can win.
+- Packing order: the checkpoint was written by a pre-release of compressed-tensors (0.15.1.a…),
+  so we verified the order empirically instead of trusting the code.
+  - Unpacked QAT weights vs the original bf16 weights: **cosine 0.992**.
+  - The same bytes read in the wrong (interleaved) order: cosine 0.0009.
+  - Relative difference: 30%. QAT weights are re-trained, not just rounded.
+
+### 16. Our Triton W4A16/W8A16 GEMV kernel (`aio/engine/quant.py`)
+Each program takes a few output rows. It loads packed int32 words, unpacks 8 nibbles with
+shifts, does the dot product per 32-wide group in fp32, and applies the group scale once per group.
+
+Microbenchmark on the L40S (CUDA-graph timed, 200 iterations):
+
+| Layer | bf16 cuBLAS | int8 (ours) | int4 (ours) |
+|---|---|---|---|
+| lm_head 262144×1536 | 1,193 µs | 635 µs | **378 µs (3.2x)** |
+| mlp gate 6144×1536 | 28.1 µs | 7.3 µs | 7.3 µs |
+| mlp down 1536×6144 | 10.3 µs | 15.5 µs | 15.3 µs ❌ |
+
+- *Pitfall 1:* the "down" shape has few rows and a long K, so splitting by rows (BLOCK_N ≥ 4)
+  creates only ~48 programs for 142 SMs. Fix: allow BLOCK_N = 1–2 and BLOCK_K = 512 in autotune.
+- *Pitfall 2:* some numbers exceed the 864 GB/s peak. The microbenchmark re-reads one small matrix
+  that stays in the L40S's **96 MB L2 cache**. Only whole-model decode numbers are honest.
+- Prefill (T > 1) uses a dequantized bf16 copy on tensor cores. Decode (T = 1) reads only the
+  packed bytes through our kernel.
+
+### 17. Better accuracy tests (`aio/quality.py`)
+- **Token agreement (teacher-forced).** Walk through the oracle's answers token by token and ask
+  "what would you predict here?". One early near-tie can't cascade, because each position is judged
+  on its own.
+  - Ours uses a `/aio/teacher_forced` endpoint (through the real decode path).
+  - vLLM uses `prompt_logprobs` (rank of each oracle token).
+- **GSM8K-100.** 100 grade-school math problems, greedy decoding, final answer after `####`.
+  This answers "did compression make it dumber?". Expect ±5 points of noise at n=100.
