@@ -80,7 +80,7 @@ def run_config(name: str, ref: dict) -> dict:
 
 
 @app.local_entrypoint()
-def main(configs: str = ",".join(ALL)):
+def main(configs: str = ",".join(ALL), tag: str = ""):
     ref = json.loads(pathlib.Path("results/s1_reference.json").read_text())
     names = configs.split(",")
     rows = []
@@ -88,7 +88,7 @@ def main(configs: str = ",".join(ALL)):
         if isinstance(res, Exception):
             print("FAILED:", res)
             continue
-        pathlib.Path(f"results/m2_{res['config']}_{GPU}.json").write_text(json.dumps(res, indent=1))
+        pathlib.Path(f"results/m2_{res['config']}_{GPU}{tag}.json").write_text(json.dumps(res, indent=1))
         rows.append(res)
     print(f"\n{'config':14s} {'agree':>7s} {'GSM8K':>6s} {'tok/s(1 user)':>14s} {'TTFT ms':>8s}")
     for r in rows:
