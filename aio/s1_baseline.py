@@ -59,15 +59,17 @@ def reference() -> dict:
     for p in CHECK_PROMPTS:
         ids = tok.apply_chat_template([{"role": "user", "content": p}], add_generation_prompt=True,
                                       tokenize=True, return_dict=True)["input_ids"]
+        ids = [int(i) for i in ids]
         x = torch.tensor([ids], device="cuda")
         with torch.no_grad():
             y = model.generate(x, max_new_tokens=CHECK_MAX_TOKENS, do_sample=False)
         new = y[0, len(ids):].tolist()
+        ids = [int(i) for i in ids]
         out.append({"prompt": p[:80], "prompt_ids": ids, "output_ids": new,
                     "output_text": tok.decode(new, skip_special_tokens=True)})
         print(f"[{len(ids):4d} tok prompt] -> {out[-1]['output_text'][:100]!r}")
-    return {"model": MODEL_ID, "sha": MODEL_SHA, "transformers": transformers.__version__,
-            "torch": torch.__version__, "gpu": GPU, "cases": out}
+    return {"model": MODEL_ID, "sha": MODEL_SHA, "transformers": str(transformers.__version__),
+            "torch": str(torch.__version__), "gpu": GPU, "cases": out}
 
 
 def _wait_ready(url: str, proc: subprocess.Popen, timeout_s: int = 1200):
