@@ -419,3 +419,35 @@ because bf16 isn't our target path.
   - Closing it needs bigger changes: fusing whole layers into one kernel ("megakernels"), or a
     Marlin-style weight layout.
   - That's diminishing returns for this project, so we move on to batching.
+
+## Milestone 3b: continuous batching (many users at once)
+
+### 24. Design (`aio/engine/batch.py`, `aio/engine/server_batch.py`)
+Why it works: decode is bandwidth-bound, so with B users in one step the weights are read once
+and used B times.
+
+- **Slots.** Up to 32 sequences. Each slot owns its KV:
+  - full-attention caches [32, 4096, hd]
+  - sliding rings [32, 512, hd]
+  - ring positions [32, 512]
+- **Compaction.** Active sequences always occupy slots 0..B-1. When one finishes, the last one is
+  copied into its slot (~25 MB copy, ~tens of µs), so a step simply processes rows [:B].
+- **Prefill** reuses the single-sequence engine (already oracle-tested), then copies that KV into
+  the slot.
+- **Small-batch W4A16 GEMM kernel** (`_gemm_kernel`):
+  - Each program dequantizes a [BLOCK_N, BLOCK_K] int4 tile once in registers.
+  - It multiplies that tile with all B rows on tensor cores (`tl.dot`).
+  - Split-K is reused for skinny shapes.
+  - Dispatch: B = 1 uses the GEMV kernel; 2 ≤ B ≤ 64 uses this GEMM; prefill above 64 uses the
+    dense bf16 copy.
+- **Scheduler thread (continuous batching).** It loops:
+  1. Admit waiting requests into free slots (prefill each, stream its first token).
+  2. Run one batched decode chunk (4 tokens) for everyone.
+  3. Stream the tokens, retire finished requests, compact the slots.
+  New users join between chunks instead of waiting for others to finish.
+- **CUDA graphs** per (padded batch size ∈ {1, 2, 4, 8, 16, 32}) × (full-attention bucket ∈ {512, …, 4096}).
+  Padded rows write junk only into free slots. `torch.compile(dynamic=None)` compiles a
+  shape-generic graph after the 2nd shape, instead of 24 separate compiles.
+- **Accuracy checks reuse the gate:**
+  - Teacher-forced agreement now runs through the *batched* path (batch of 1).
+  - GSM8K sends 16 requests at a time, so it exercises real batching.
