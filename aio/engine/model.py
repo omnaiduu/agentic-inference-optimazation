@@ -147,6 +147,10 @@ class Gemma4E2B:
         self.static_tok = torch.zeros(1, dtype=torch.long, device=device)
         self.static_pos = torch.zeros(1, dtype=torch.long, device=device)
         self.static_out = torch.zeros(1, dtype=torch.long, device=device)
+        # Multi-step decode: each graph replay feeds its output token back in as the next input and
+        # appends it to out_hist ON THE GPU, so the CPU can launch N steps and sync only once.
+        self.out_hist = torch.zeros(64, dtype=torch.long, device=device)
+        self.static_cnt = torch.zeros(1, dtype=torch.long, device=device)
         self.step_fn = self.forward  # replaced by a torch.compile'd version in compile mode
 
     def enable_compile(self):
@@ -283,6 +287,14 @@ class Gemma4E2B:
         p = torch.tensor([pos], device=self.device)
         return int(self.forward(ids, p, S=self._bucket(pos)).item())
 
+    def _graph_body(self, S: int):
+        out = self.step_fn(self.static_tok, self.static_pos, S)
+        self.static_out.copy_(out)
+        self.out_hist.index_copy_(0, self.static_cnt, out)
+        self.static_tok.copy_(out)       # next step's input = this step's output (stays on GPU)
+        self.static_pos.add_(1)
+        self.static_cnt.add_(1)
+
     @torch.inference_mode()
     def capture_graphs(self):
         """E2: record one decode step per cache bucket as a CUDA graph.
@@ -296,11 +308,12 @@ class Gemma4E2B:
             s.wait_stream(torch.cuda.current_stream())
             with torch.cuda.stream(s):
                 for _ in range(2):  # warm up allocator / kernels outside the graph
-                    self.static_out.copy_(self.step_fn(self.static_tok, self.static_pos, S))
+                    self.static_cnt.zero_()
+                    self._graph_body(S)
             torch.cuda.current_stream().wait_stream(s)
             g = torch.cuda.CUDAGraph()
             with torch.cuda.graph(g):
-                self.static_out.copy_(self.step_fn(self.static_tok, self.static_pos, S))
+                self._graph_body(S)
             self.graphs[S] = g
             if S >= self.max_len:
                 break
@@ -310,5 +323,16 @@ class Gemma4E2B:
     def decode_graph(self, tok: int, pos: int) -> int:
         self.static_tok.fill_(tok)
         self.static_pos.fill_(pos)
+        self.static_cnt.zero_()
         self.graphs[self._bucket(pos)].replay()
         return int(self.static_out.item())
+
+    @torch.inference_mode()
+    def decode_many(self, tok: int, pos: int, n: int) -> list[int]:
+        """Generate n tokens with ONE host sync (instead of one per token)."""
+        self.static_tok.fill_(tok)
+        self.static_pos.fill_(pos)
+        self.static_cnt.zero_()
+        for i in range(n):
+            self.graphs[self._bucket(pos + i)].replay()
+        return self.out_hist[:n].tolist()

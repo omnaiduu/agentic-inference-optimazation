@@ -25,6 +25,8 @@ def main():
     ap.add_argument("--port", type=int, default=8001)
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--quant-dir", default=None, help="Google QAT int4 checkpoint dir")
+    ap.add_argument("--chunk", type=int, default=4,
+                    help="tokens generated per host sync (graph modes); 1 = sync every token")
     ap.add_argument("--lm-head-bits", type=int, default=None, help="quantize lm_head to 4 or 8 bits")
     args = ap.parse_args()
 
@@ -48,13 +50,23 @@ def main():
             if len(prompt_ids) + max_tokens > args.max_len:
                 raise ValueError("prompt + max_tokens exceeds max_len")
             t = model.prefill(prompt_ids)
-            pos = len(prompt_ids)
-            for n in range(max_tokens):
-                emit(t)
-                if (not ignore_eos and t in EOS_IDS) or n == max_tokens - 1:
+            emit(t)                       # first token goes out immediately (TTFT)
+            done, pos = 1, len(prompt_ids)
+            while done < max_tokens and (ignore_eos or t not in EOS_IDS):
+                k = min(args.chunk, max_tokens - done)
+                if args.mode == "eager" or k == 1:
+                    toks = [decode(t, pos)]
+                else:
+                    toks = model.decode_many(t, pos, k)
+                for tt in toks:
+                    emit(tt)
+                    done += 1
+                    if not ignore_eos and tt in EOS_IDS:
+                        break
+                pos += len(toks)
+                t = toks[-1]
+                if not ignore_eos and any(x in EOS_IDS for x in toks):
                     break
-                t = decode(t, pos)
-                pos += 1
 
     async def completions(request: web.Request):
         body = await request.json()
