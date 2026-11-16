@@ -377,3 +377,25 @@ Int4 step breakdown (ungraphed kernel time, 3.08 ms):
 Unresolved: bf16 engine-only time is 7.67 ms, vs the 6.93 ms TPOT measured in the M1 run. Most
 likely different L40S hosts (we can't control placement), but the cause isn't proven. Not pursued,
 because bf16 isn't our target path.
+
+### 22. Three fixes from the profile, plus a bug the accuracy gate caught 🐛
+1. **Ring-buffer KV for the 28 sliding-window layers.**
+   - Their cache is now exactly 512 slots (slot = position mod 512).
+   - Decode attention reads 512 keys instead of a whole power-of-two bucket (up to 4,096).
+   - A `ring_pos` tensor records which position each slot holds, and the mask is built from it.
+2. **Split-K in the int4 GEMV.**
+   - Skinny matrices split their K dimension across 2–8 programs: down_proj 1536×6144 → 8,
+     o_proj → 2–4, qkv → 2.
+   - Each program writes fp32 partials, and `torch.compile` fuses the partial-sum into the next op.
+3. **Multi-step on-device decode.**
+   - The captured graph feeds its output token back as the next input and appends it to an
+     on-GPU history buffer.
+   - The server launches 4 steps and syncs once, removing ~0.3 ms per token of host round-trips.
+
+**The bug.** The first ring-buffer run scored **token agreement 85.9% and GSM8K 17%** (was 99.8% / 74%).
+- Cause: the decode mask was built from `ring_pos` **before** the current token's position was
+  written into it. So in every sliding layer the new token could not attend to itself.
+- The text still *looked* plausible at a glance. Only the gate exposed it.
+- Fix: write `ring_pos` first, then build the mask.
+- **Lesson:** this is exactly the failure mode Baseten warns about. An optimization that "works"
+  and is fast, but quietly breaks the model. Run the accuracy gate on every change, no exceptions.
