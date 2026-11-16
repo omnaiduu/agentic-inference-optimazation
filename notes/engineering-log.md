@@ -299,3 +299,37 @@ Microbenchmark on the L40S (CUDA-graph timed, 200 iterations):
   - vLLM uses `prompt_logprobs` (rank of each oracle token).
 - **GSM8K-100.** 100 grade-school math problems, greedy decoding, final answer after `####`.
   This answers "did compression make it dumber?". Expect ±5 points of noise at n=100.
+
+### 18. Milestone 2 results: 2.5x stock vLLM, and +55% over vLLM on the same 4-bit weights 🎉
+All runs on an L40S, 1 user, ~1,100-token prompt and 256 output tokens. Agreement is teacher-forced
+against the bf16 HF oracle (410 positions). GSM8K is the first 100 test problems, greedy.
+
+| Config | Token agreement | GSM8K-100 | tok/s (1 user) | TTFT | Bytes/token (est.) |
+|---|---|---|---|---|---|
+| vLLM, bf16 | 99.5% | 73% | 128.4 | 33.9 ms | 4.6 GB |
+| vLLM, Google QAT int4 | 91.2% | 68% | 210.8 | 34.1 ms | ~1.9 GB |
+| ours, bf16 | 99.8% | 74% | 125.3 ⚠️ | 52.3 ms | 4.6 GB |
+| ours, QAT int4 (lm_head bf16) | 91.2% | 65% | 239.5 | 40.1 ms | ~1.9 GB |
+| ours, QAT int4 + lm_head int8 | 91.5% | 67% | 283.3 | 54.3 ms | ~1.5 GB |
+| **ours, QAT int4 + lm_head int4** | **92.0%** | **70%** | **326.8** | 39.3 ms | **~1.3 GB** |
+
+Takeaways:
+- **On identical weights, our engine beats vLLM by 14%** (239.5 vs 210.8 tok/s). That's our Triton
+  GEMV plus torch.compile fusion, against vLLM's Marlin kernels.
+- **Quantizing the lm_head is the real win.** vLLM serves it in bf16, because the checkpoint says
+  `ignore: [lm_head]`.
+  - int8 lm_head: +18%. int4 lm_head: +36% on top of the QAT engine.
+  - Final: **326.8 tok/s = 2.55x stock vLLM bf16, and 1.55x vLLM on the same QAT checkpoint.**
+- **Accuracy:** quantizing the lm_head did **not** measurably hurt. All QAT variants score 91–92%
+  agreement and 65–70% on GSM8K.
+  - The QAT checkpoint itself is the accuracy cost (−4 to −9 GSM8K points vs bf16, near the ±5
+    noise floor at n=100).
+  - Our int4 lm_head adds nothing measurable on top of that.
+- **Not done yet:**
+  - 326.8 tok/s is only ~50% of the int4 speed of light (~655 tok/s at 1.3 GB/token).
+  - TTFT is 39–54 ms vs vLLM's 34 ms. Our prefill is still uncompiled eager PyTorch with
+    dequantized weights.
+  - ⚠️ **Regression to investigate:** ours-bf16 dropped from 144.2 to 125.3 tok/s after the M2
+    refactor, while vLLM-bf16 was stable (128.5 → 128.4).
+- First-time startup was 10–15 min (Triton autotuning of 54 configs × every layer shape, plus
+  Inductor compilation). It's cached in the `aio-compile-cache` volume now.
