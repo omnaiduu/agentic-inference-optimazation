@@ -1,0 +1,268 @@
+{
+ "bf16": {
+  "graph_ms": 7.66947265625,
+  "sync_ms": 7.711951365000118,
+  "kernel_us_total": 7764.517800000076,
+  "kernels_per_step": 630.0,
+  "top": [
+   [
+    "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float> >(cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float>)",
+    5082.6839000000045,
+    107
+   ],
+   [
+    "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, float, float, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float>, float> >(cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float>, float>)",
+    1162.0240999999808,
+    20
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)",
+    422.49230000001893,
+    15
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+    128.41139999999174,
+    35
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_64x2_nn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_64x2_nn_align8::Params)",
+    113.17530000001281,
+    35
+   ],
+   [
+    "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 5, false, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float> >(cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float>)",
+    111.12760000002393,
+    35
+   ],
+   [
+    "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float> >(cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float>)",
+    106.33940000000587,
+    35
+   ],
+   [
+    "triton_red_fused__softmax__to_copy_bitwise_and_bitwise_not_bmm_gt_le_masked_fill_permute_prepare_softmax_online_slice_sub_unsqueeze_view_3",
+    73.39220000000172,
+    28
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_10",
+    73.01480000001526,
+    34
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_5",
+    71.97189999998787,
+    35
+   ],
+   [
+    "void cublasLt::splitKreduce_kernel<32, 16, int, __nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16, false, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplitKParams<float>, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, __nv_bfloat16*, float const*, float const*, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, void*, long, float*, int*, float*, float*, float const*, float const*, float const*, float const*, float const*)",
+    71.6394999999966,
+    50
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_11",
+    60.54130000000242,
+    34
+   ],
+   [
+    "triton_per_fused__to_copy_add_cat_cos_mean_mul_neg_pow_sin_slice_unsqueeze_view_1",
+    51.13910000000115,
+    28
+   ],
+   [
+    "triton_red_fused_argmax_div_mul_tanh_52",
+    41.90100000000202,
+    1
+   ],
+   [
+    "void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_bfloat16, float, __nv_bfloat16, false, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplitKParams<float>, float const*, __nv_bfloat16 const*, __nv_bfloat16*, __nv_bfloat16*, float const*, float const*, __nv_bfloat16 const*, float const*, __nv_bfloat16*, void*, long, float*, int*, float*, float*, float const*, float const*, float const*, float const*, float const*)",
+    28.086300000001344,
+    20
+   ],
+   [
+    "triton_poi_fused_gelu_mul_split_30",
+    23.244600000008006,
+    20
+   ],
+   [
+    "triton_per_fused__to_copy_add_cat_cos_index_copy_mean_mul_neg_pow_sin_slice_unsqueeze_2",
+    22.352299999997623,
+    12
+   ],
+   [
+    "triton_red_fused__softmax__to_copy_bitwise_not_bmm_le_masked_fill_permute_prepare_softmax_online_slice_unsqueeze_view_17",
+    18.090399999998052,
+    7
+   ],
+   [
+    "triton_poi_fused_gelu_mul_split_6",
+    17.254700000013692,
+    15
+   ],
+   [
+    "triton_per_fused__to_copy_add_index_copy_mean_mul_pow_slice_4",
+    14.659399999990525,
+    12
+   ],
+   [
+    "triton_per_fused__to_copy_add_cat_cos_mean_mul_neg_pow_sin_slice_unsqueeze_view_15",
+    13.228799999997232,
+    7
+   ],
+   [
+    "triton_per_fused__to_copy_add_cat_cos_index_copy_mean_mul_neg_pow_sin_slice_unsqueeze_16",
+    5.686300000001573,
+    3
+   ],
+   [
+    "triton_per_fused__to_copy_add_index_copy_mean_mul_pow_slice_18",
+    3.7247999999960495,
+    3
+   ],
+   [
+    "triton_red_fused__to_copy_add_embedding_mean_mul_pow_0",
+    2.114999999997599,
+    1
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_slice_51",
+    2.112000000000262,
+    1
+   ]
+  ]
+ },
+ "qat-lm4": {
+  "graph_ms": 3.014296875,
+  "sync_ms": 3.3121499349999795,
+  "kernel_us_total": 3076.67449999996,
+  "kernels_per_step": 595.0,
+  "top": [
+   [
+    "_gemv_kernel",
+    2226.045699999984,
+    212
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+    133.69999999999683,
+    35
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_64x2_nn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_64x2_nn_align8::Params)",
+    120.95109999998184,
+    35
+   ],
+   [
+    "triton_red_fused__softmax__to_copy_bitwise_and_bitwise_not_bmm_gt_le_masked_fill_permute_prepare_softmax_online_slice_sub_unsqueeze_view_3",
+    72.94180000001002,
+    28
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_14",
+    71.21800000001231,
+    33
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_11",
+    70.05189999998464,
+    34
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_12",
+    60.76450000000699,
+    34
+   ],
+   [
+    "triton_red_fused_argmax_div_mul_tanh_54",
+    51.293299999994645,
+    1
+   ],
+   [
+    "triton_per_fused__to_copy_add_cat_cos_mean_mul_neg_pow_sin_slice_unsqueeze_view_1",
+    50.425699999992325,
+    28
+   ],
+   [
+    "void cublasLt::splitKreduce_kernel<32, 16, int, __nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16, false, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplitKParams<float>, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, __nv_bfloat16*, float const*, float const*, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, void*, long, float*, int*, float*, float*, float const*, float const*, float const*, float const*, float const*)",
+    48.74529999999857,
+    35
+   ],
+   [
+    "triton_per_fused__to_copy_add_cat_cos_index_copy_mean_mul_neg_pow_sin_slice_unsqueeze_2",
+    22.34580000000055,
+    12
+   ],
+   [
+    "triton_poi_fused_gelu_mul_split_32",
+    21.632199999985495,
+    20
+   ],
+   [
+    "triton_red_fused__softmax__to_copy_bitwise_not_bmm_le_masked_fill_permute_prepare_softmax_online_slice_unsqueeze_view_19",
+    17.945800000001057,
+    7
+   ],
+   [
+    "triton_poi_fused_gelu_mul_split_6",
+    17.232499999988118,
+    15
+   ],
+   [
+    "triton_per_fused__to_copy_add_index_copy_mean_mul_pow_slice_4",
+    14.563800000015567,
+    12
+   ],
+   [
+    "triton_per_fused__to_copy_add_cat_cos_mean_mul_neg_pow_sin_slice_unsqueeze_view_17",
+    13.30839999999207,
+    7
+   ],
+   [
+    "triton_per_fused__to_copy_add_cat_cos_index_copy_mean_mul_neg_pow_sin_slice_unsqueeze_18",
+    5.702400000005945,
+    3
+   ],
+   [
+    "triton_per_fused__to_copy_add_index_copy_mean_mul_pow_slice_20",
+    3.6896000000021574,
+    3
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_10",
+    2.335999999998694,
+    1
+   ],
+   [
+    "triton_red_fused__to_copy_add_embedding_mean_mul_pow_0",
+    2.262499999997294,
+    1
+   ],
+   [
+    "triton_red_fused__to_copy_add_embedding_mean_mul_pow_5",
+    2.134599999998636,
+    1
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_slice_53",
+    2.102499999999782,
+    1
+   ],
+   [
+    "triton_per_fused__to_copy_add_embedding_mean_mul_pow_view_8",
+    1.7025000000000088,
+    1
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_7",
+    1.5744000000006964,
+    1
+   ],
+   [
+    "triton_poi_fused_gelu_mul_select_46",
+    1.2544999999976427,
+    1
+   ]
+  ]
+ }
+}

@@ -355,3 +355,25 @@ Takeaways:
   [PR #49588](https://github.com/vllm-project/vllm/pull/49588). Our decode attends over a whole
   power-of-two bucket even for the 28 window-512 layers.
 - **Load-once int4 unpack:** our kernel already does this.
+
+## Milestone 3a: chasing the speed of light (single user)
+
+### 21. Profile: where does one decode step go? (L40S, context 1,200, `aio/m3_profile.py`)
+| Config | Engine-only (graph replay) | + per-token `.item()` sync | Kernels per step |
+|---|---|---|---|
+| bf16 | 7.67 ms (130 tok/s) | 7.71 ms | 630 |
+| QAT int4 + int4 lm_head | **3.01 ms (332 tok/s)** | 3.31 ms (302 tok/s) | 595 |
+
+Int4 step breakdown (ungraphed kernel time, 3.08 ms):
+- **Our GEMV: 2.23 ms (72%).** At ~1.3 GB per token that's ~580 GB/s, i.e. ~67% of peak.
+  This is the main target (split-K and tuning).
+- **Attention: ~0.36 ms (12%):** cutlass bmm 0.25 ms + fused masked softmax 0.09 ms. Target: the
+  ring buffer.
+- RMSNorms, GELU·up, RoPE: ~0.4 ms (13%), already fused by Inductor.
+- argmax + softcap over 262K logits: 0.05 ms.
+- **Host sync: +0.3 ms per token (~10%)** from `.item()` after every token. Fix: multi-step decode
+  on the device, syncing every N tokens.
+
+Unresolved: bf16 engine-only time is 7.67 ms, vs the 6.93 ms TPOT measured in the M1 run. Most
+likely different L40S hosts (we can't control placement), but the cause isn't proven. Not pursued,
+because bf16 isn't our target path.
