@@ -171,7 +171,7 @@ Kernel targets come from Stage 0:
   8. A learned `layer_scalar` multiplies each layer's output.
   9. The lm_head is tied to the embedding table; logits are soft-capped to 30·tanh(x/30).
 - Static KV cache: only the 15 non-shared layers need one, and it has 1 KV head.
-  That's ~45 MB at 4K context, tiny compared with the 4.6 GB of weights.
+  That is ~75 MB at 4K context (12 sliding layers × 256 dims + 3 full × 512, for K and V, bf16), tiny compared with the 4.6 GB of weights.
 - E2: one CUDA graph per cache-length bucket (256, 512, …, 4096). The decode step replays as
   one launch instead of ~1,000 separate kernel launches.
 - `aio/engine/server.py` is an OpenAI-compatible `/v1/completions` endpoint, so the same
