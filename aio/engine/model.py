@@ -132,8 +132,13 @@ class Gemma4E2B:
         }
 
         # ---- static KV cache: only for the 15 non-shared layers, 1 KV head each ----
-        self.k_cache = [torch.zeros(max_len, self.head_dim[i], dtype=self.dtype, device=device)
+        # Sliding-window layers only ever look at the last 512 tokens, so their cache is a
+        # 512-slot RING BUFFER (slot = position % 512). Decode attention then always reads
+        # exactly 512 keys instead of a whole power-of-two bucket (up to 4096).
+        self.k_cache = [torch.zeros(max_len if self.is_full[i] else self.window, self.head_dim[i],
+                                    dtype=self.dtype, device=device)
                         for i in range(self.first_shared)]
+        self.ring_pos = torch.full((self.window,), -10**9, dtype=torch.long, device=device)
         self.v_cache = [torch.zeros_like(c) for c in self.k_cache]
         self.kv_positions = torch.arange(max_len, device=device)
 
@@ -166,8 +171,16 @@ class Gemma4E2B:
             allowed &= k > p - self.window
         return allowed
 
+    def ring_mask(self, positions: torch.Tensor) -> torch.Tensor:
+        """Boolean [T, 512] for decode over the ring: slot holds position ring_pos[s]."""
+        k = self.ring_pos[None, :]
+        p = positions[:, None]
+        return (k <= p) & (k > p - self.window)
+
     def forward(self, ids: torch.Tensor, positions: torch.Tensor, S: int) -> torch.Tensor:
         """ids, positions: [T]. Writes K/V for these positions, attends over cache[:S].
+        Prefill (T > 1) must start at position 0: sliding layers attend over the fresh K/V of
+        the whole prompt and only the last 512 entries are written into the ring.
         Returns the next-token id predicted at the LAST position, shape [1]."""
         W, eps, T = self.W, self.eps, ids.shape[0]
 
@@ -181,7 +194,14 @@ class Gemma4E2B:
         ple = (ple_ctx + ple_tok) * (2.0 ** -0.5)                                     # [T, 35, 256]
 
         rope = {f: self.rope(positions, f) for f in (False, True)}
-        masks = {f: self.attn_mask(positions, S, f) for f in (False, True)}
+        prefill = T > 1
+        if prefill:
+            masks = {f: self.attn_mask(positions, T, f) for f in (False, True)}
+        else:
+            masks = {True: self.attn_mask(positions, S, True), False: self.ring_mask(positions)}
+        tail = positions[-self.window:]                    # positions that land in the ring
+        self.ring_pos.index_copy_(0, tail % self.window, tail)
+        fresh = {}                                         # prefill: full-prompt K/V per source layer
 
         for i in range(self.L):
             w, full, hd = self.layer_w[i], self.is_full[i], self.head_dim[i]
@@ -199,10 +219,22 @@ class Gemma4E2B:
                 k = rms_norm(k, w["self_attn.k_norm.weight"], eps)
                 k = k * cos + rotate_half(k) * sin
                 v = rms_norm(v, None, eps)
-                self.k_cache[i].index_copy_(0, positions, k)
-                self.v_cache[i].index_copy_(0, positions, v)
-            K = self.k_cache[self.kv_src[i]][:S]                                      # [S, hd]
-            V = self.v_cache[self.kv_src[i]][:S]
+                if full:
+                    self.k_cache[i].index_copy_(0, positions, k)
+                    self.v_cache[i].index_copy_(0, positions, v)
+                else:
+                    slots = tail % self.window
+                    self.k_cache[i].index_copy_(0, slots, k[-self.window:])
+                    self.v_cache[i].index_copy_(0, slots, v[-self.window:])
+                if prefill:
+                    fresh[i] = (k, v)
+            src = self.kv_src[i]
+            if prefill:
+                K, V = fresh[src]                                                     # [T, hd]
+            elif full:
+                K, V = self.k_cache[src][:S], self.v_cache[src][:S]                   # [S, hd]
+            else:
+                K, V = self.k_cache[src], self.v_cache[src]                           # [512, hd] ring
             scores = torch.einsum("thd,sd->hts", q, K).float()                       # scale = 1.0
             scores = scores.masked_fill(~masks[full][None], float("-inf"))
             probs = torch.softmax(scores, dim=-1).to(self.dtype)
@@ -233,6 +265,7 @@ class Gemma4E2B:
     @torch.inference_mode()
     def prefill(self, prompt_ids: list[int]) -> int:
         T = len(prompt_ids)
+        self.ring_pos.fill_(-10**9)                        # new request: forget the old ring
         ids = torch.tensor(prompt_ids, dtype=torch.long, device=self.device)
         pos = torch.arange(T, device=self.device)
         return int(self.forward(ids, pos, S=T).item())

@@ -74,32 +74,47 @@ def linear(x: torch.Tensor, w) -> torch.Tensor:
 
 
 def _prune(configs, named_args, **kwargs):
-    """Drop tile shapes that do not divide K (e.g. BLOCK_K=512 for the K=256 PLE projection)."""
-    K = named_args["K"]
-    return [c for c in configs if K % c.kwargs["BLOCK_K"] == 0] or configs[:1]
+    """Drop tile shapes that do not divide this program's K slice (e.g. BLOCK_K=512 when K=256)."""
+    KS = named_args["KS"]
+    return [c for c in configs if KS % c.kwargs["BLOCK_K"] == 0] or configs[:1]
+
+
+def split_for(N: int, K: int) -> int:
+    """Split-K factor. A skinny matrix (few output rows, long K) gives too few programs to keep
+    all SMs busy, so each row's dot product is cut into SPLIT slices summed afterwards.
+    (PyTorch/IBM arXiv 2402.00025; vLLM uses the same idea in FlashDecoding.)"""
+    if N >= 4096:
+        return 1
+    for split in (8, 4, 2):
+        if K >= 768 * split and K % (split * 128) == 0:
+            return split
+    return 1
 
 
 @triton.autotune(
     prune_configs_by={"early_config_prune": _prune},
     configs=[triton.Config({"BLOCK_N": bn, "BLOCK_K": bk}, num_warps=nw)
              for bn in (1, 2, 4, 8, 16, 32) for bk in (128, 256, 512) for nw in (1, 2, 4)],
-    key=["N", "K", "BITS"],
+    key=["N", "K", "KS", "BITS"],
 )
 @triton.jit
-def _gemv_kernel(x_ptr, wp_ptr, s_ptr, y_ptr, N, K,
+def _gemv_kernel(x_ptr, wp_ptr, s_ptr, y_ptr, N, K, KS,
                  BITS: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr):
+    """Program (pid_n, pid_k) computes rows [pid_n*BLOCK_N, ...) over K slice [pid_k*KS, (pid_k+1)*KS)
+    and writes an fp32 partial sum to y[pid_k, rows]."""
     PER: tl.constexpr = 32 // BITS                # values per int32
     MASK: tl.constexpr = (1 << BITS) - 1
     OFF: tl.constexpr = 1 << (BITS - 1)
     G: tl.constexpr = 32                          # group size
     pid = tl.program_id(0)
+    pid_k = tl.program_id(1)
     rn = pid * BLOCK_N + tl.arange(0, BLOCK_N)    # output rows handled by this program
     nmask = rn < N
     KW = K // PER                                 # int32 words per row
     KG = K // G                                   # groups per row
     shifts = tl.arange(0, PER) * BITS
     acc = tl.zeros((BLOCK_N,), dtype=tl.float32)
-    for k0 in range(0, K, BLOCK_K):
+    for k0 in range(pid_k * KS, (pid_k + 1) * KS, BLOCK_K):
         # 1) packed weights: [BLOCK_N, BLOCK_K/PER] int32 -> unpack to [BLOCK_N, BLOCK_K]
         rw = k0 // PER + tl.arange(0, BLOCK_K // PER)
         wp = tl.load(wp_ptr + rn[:, None] * KW + rw[None, :], mask=nmask[:, None], other=0)
@@ -113,12 +128,14 @@ def _gemv_kernel(x_ptr, wp_ptr, s_ptr, y_ptr, N, K,
         rg = k0 // G + tl.arange(0, BLOCK_K // G)
         s = tl.load(s_ptr + rn[:, None] * KG + rg[None, :], mask=nmask[:, None], other=0).to(tl.float32)
         acc += tl.sum(part * s, axis=1)
-    tl.store(y_ptr + rn, acc.to(tl.bfloat16), mask=nmask)
+    tl.store(y_ptr + pid_k * N + rn, acc, mask=nmask)
 
 
 def gemv(x: torch.Tensor, w: QLinear) -> torch.Tensor:
     """y[1, N] = x[1, K] @ W^T with W stored in `bits`-bit groups. Reads ~bits/16 of bf16 bytes."""
-    y = torch.empty((1, w.N), dtype=torch.bfloat16, device=x.device)
-    grid = lambda meta: (triton.cdiv(w.N, meta["BLOCK_N"]),)
-    _gemv_kernel[grid](x, w.packed, w.scale, y, w.N, w.K, BITS=w.bits)
-    return y
+    split = split_for(w.N, w.K)
+    y = torch.empty((split, w.N), dtype=torch.float32, device=x.device)
+    grid = lambda meta: (triton.cdiv(w.N, meta["BLOCK_N"]), split)
+    _gemv_kernel[grid](x, w.packed, w.scale, y, w.N, w.K, w.K // split, BITS=w.bits)
+    # Summing the partials (and the bf16 cast) is fused by torch.compile into the next kernel.
+    return y.sum(0, keepdim=True).to(torch.bfloat16)
