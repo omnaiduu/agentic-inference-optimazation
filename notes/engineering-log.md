@@ -134,3 +134,12 @@ Kernel targets come from Stage 0:
   [config](https://huggingface.co/google/gemma-4-E2B-it-qat-w4a16-ct).
 - Gemma's lm_head is tied to the embedding table, so it very likely stays bf16 (to verify on load).
 - With 4-bit layers, the bf16 lm_head becomes ~45% of the bytes read per token.
+
+### 8. Oracle saved (L40S)
+- `results/s1_reference.json`: 8 prompts, greedy decoding, 64 new tokens, transformers 5.20.2, torch 2.14.
+- **Lesson: greedy decoding is not bit-identical across GPUs.** Prompt 2 started "Here are a few ways…"
+  on the L4 but "Here is a Python function…" on the L40S, with the same code and weights.
+  - Cause: different GPUs order floating-point additions differently, so near-tied logits can flip.
+  - Consequence: the correctness gate must allow "close-call" divergences, not demand 100% exact
+    text. Baseten made the same allowance (subtle numerical differences, with accuracy at least as
+    good as BF16).
