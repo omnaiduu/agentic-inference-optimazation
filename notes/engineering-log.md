@@ -234,3 +234,26 @@ vLLM spends 7.8 ms per token, and we spend 11.7 ms. Suspects:
   µs of fixed overhead, and ~1,000 kernels × ~3 µs ≈ 3 ms. That's most of the gap.
 - Separate q/k/v and gate/up matmuls: more kernels, and each one reads less data per launch.
 - Attention upcasts K/V to fp32 over the whole cache bucket.
+
+### 14. Fusion round: we now BEAT stock vLLM for a single user 🎉
+Two changes:
+- Fused weights: one qkv matmul instead of three, one gate_up matmul instead of two.
+- `torch.compile` (TorchInductor) on the decode step, then our own CUDA graphs on top.
+
+| Engine (L40S, 1 user) | tok/s | TPOT | TTFT | Oracle | % speed of light |
+|---|---|---|---|---|---|
+| stock vLLM 0.33 | 128.5 | 7.78 ms | **33.6 ms** | 7/8 | 68% |
+| ours: CUDA graphs (M1) | 85.3 | 11.73 ms | 51.9 ms | 6/8 | 45% |
+| ours: + fused qkv / gate_up | 95.6 | 10.46 ms | 38.3 ms | 5/8 | 51% |
+| **ours: + torch.compile** | **144.2** | **6.93 ms** | 38.6 ms | **7/8** | **77%** |
+
+- **+12% faster per token than stock vLLM.** The diagnosis was right: kernel count, not maths, was
+  the bottleneck. Inductor fused each RMSNorm, GELU·up and RoPE into single kernels.
+- Fusing the weights alone gave +12% (85 → 96). Compile gave a further +51% (96 → 144).
+- **Accuracy:** the compiled engine matches the oracle on 7/8 prompts, the same score as vLLM,
+  and diverges on the same near-tie prompt.
+- **Still behind:** TTFT is 38.6 vs 33.6 ms. Our prefill (reading the prompt) is still uncompiled
+  eager PyTorch.
+- **Cost:** the first compile took 256 s. It's now cached in the `aio-compile-cache` volume.
+- vLLM still wins on throughput with many users. Our engine serves one request at a time; batching
+  is a later milestone.

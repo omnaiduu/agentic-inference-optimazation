@@ -2,12 +2,12 @@
  "engine": "aio-gemma4-m1",
  "gpu": "L40S",
  "results": {
-  "eager": {
-   "startup_s": 18.013066053390503,
+  "graph": {
+   "startup_s": 16.013709545135498,
    "correctness": {
-    "exact": 6,
+    "exact": 5,
     "total": 8,
-    "avg_common_prefix": 0.8413934362453706,
+    "avg_common_prefix": 0.7978328301847645,
     "rows": [
      {
       "exact": true,
@@ -34,8 +34,8 @@
       "want": "Here are three key differences between TCP (Transmission Control Protocol) and UDP (User Datagram Protocol):\n\n1. **Connection Orientation (Reliability & Setup):"
      },
      {
-      "exact": true,
-      "common_prefix_frac": 1.0,
+      "exact": false,
+      "common_prefix_frac": 0.6515151515151515,
       "got": "Here are a few ways to translate \"The weather is nice today and I want to go for a walk\" to Spanish, depending on the nuance you prefer:\n\n**Most common and natu",
       "want": "Here are a few ways to translate \"The weather is nice today and I want to go for a walk\" to Spanish, depending on the nuance you prefer:\n\n**Most common and natu"
      },
@@ -63,22 +63,22 @@
     {
      "concurrency": 1,
      "requests": 4,
-     "ttft_ms_p50": 50.916958000001955,
-     "ttft_ms_p90": 51.98646899999915,
-     "tpot_ms_p50": 46.31258939607842,
-     "tpot_ms_p90": 46.328663215686284,
-     "per_user_tok_s": 21.592400965701053,
-     "throughput_tok_s": 21.612965422241274,
-     "wall_s": 47.378968132999994
+     "ttft_ms_p50": 38.33472150000006,
+     "ttft_ms_p90": 42.005373000002066,
+     "tpot_ms_p50": 10.460077080392157,
+     "tpot_ms_p90": 10.489923447058812,
+     "per_user_tok_s": 95.60158996098997,
+     "throughput_tok_s": 94.62978871127866,
+     "wall_s": 10.821116838000002
     }
    ]
   },
-  "graph": {
-   "startup_s": 14.00955581665039,
+  "compile": {
+   "startup_s": 268.11920189857483,
    "correctness": {
-    "exact": 6,
+    "exact": 7,
     "total": 8,
-    "avg_common_prefix": 0.8413934362453706,
+    "avg_common_prefix": 0.8774606299212598,
     "rows": [
      {
       "exact": true,
@@ -93,8 +93,8 @@
       "want": "Here is a Python function that checks whether a given integer is a prime number.\n\n### Python Function\n\n```python\ndef is_prime(n):\n    \"\"\"\n    Checks if a given "
      },
      {
-      "exact": false,
-      "common_prefix_frac": 0.7114624505928854,
+      "exact": true,
+      "common_prefix_frac": 1.0,
       "got": "Imagine you have two kinds of helpers for your computer:\n\n1. **The Brain (CPU):** This is like the **boss** or the **manager** of the computer. It's really good",
       "want": "Imagine you have two kinds of helpers for your computer:\n\n1. **The Brain (CPU):** This is like the **boss** or the **manager** of the computer. It's really good"
      },
@@ -134,13 +134,13 @@
     {
      "concurrency": 1,
      "requests": 4,
-     "ttft_ms_p50": 51.91563300000013,
-     "ttft_ms_p90": 55.02590499999371,
-     "tpot_ms_p50": 11.728510847058816,
-     "tpot_ms_p90": 11.756717337254885,
-     "per_user_tok_s": 85.26231616614587,
-     "throughput_tok_s": 84.09994451598143,
-     "wall_s": 12.175989008000002
+     "ttft_ms_p50": 38.6063374999992,
+     "ttft_ms_p90": 40.648641000018415,
+     "tpot_ms_p50": 6.933321839215644,
+     "tpot_ms_p90": 6.952048968627441,
+     "per_user_tok_s": 144.2310083377189,
+     "throughput_tok_s": 141.6975770440662,
+     "wall_s": 7.22665850300001
     }
    ]
   }
