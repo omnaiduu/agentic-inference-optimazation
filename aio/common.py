@@ -25,12 +25,15 @@ cpu_image = (
     .add_local_python_source("aio")
 )
 
-# GPU image: the OFFICIAL vLLM release image (torch, transformers, triton, and the CUDA
-# compiler nvcc, which vLLM's FlashInfer sampler JIT-compiles on first use).
-# The same image runs our own engine so both sides use identical torch/CUDA.
+# GPU image, following Modal's own vLLM guide (modal.com/docs/examples/vllm_inference):
+# NVIDIA's CUDA *devel* image (includes nvcc, which vLLM's FlashInfer sampler
+# JIT-compiles with) + Modal's standalone Python + pip-installed vLLM.
+# CUDA 13.0.3 matches the official vLLM 0.33.0 release build.
+# The same image runs our own engine, so both sides use identical torch/CUDA.
 gpu_image = (
-    modal.Image.from_registry(f"vllm/vllm-openai:v{VLLM_VERSION}")
+    modal.Image.from_registry("nvidia/cuda:13.0.3-devel-ubuntu24.04", add_python="3.12")
     .entrypoint([])
+    .uv_pip_install(f"vllm=={VLLM_VERSION}", "huggingface_hub[hf_xet]", "aiohttp")
     .env(_env)
     .add_local_python_source("aio")
 )

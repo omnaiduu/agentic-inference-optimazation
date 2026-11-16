@@ -148,9 +148,16 @@ Kernel targets come from Stage 0:
 - On the first sampling call, vLLM 0.33's FlashInfer sampler JIT-compiles a CUDA kernel.
   That needs `nvcc`, which our slim pip-installed image doesn't have:
   `RuntimeError: Could not find nvcc`.
-- Fix: use the **official image** `vllm/vllm-openai:v0.33.0` (CUDA 13.0.3, released 2026-11-02,
-  confirmed via the [release notes](https://github.com/vllm-project/vllm/releases/)).
-  We use the same image for our engine, so both sides run identical torch/CUDA.
+- Fix attempt 1: use the **official image** `vllm/vllm-openai:v0.33.0` (CUDA 13.0.3, released
+  2026-11-02, confirmed via the [release notes](https://github.com/vllm-project/vllm/releases/)).
+  Modal rejected it: *"unable to determine the version of Python installed in the Image"*.
+  The image keeps its Python somewhere Modal doesn't look.
+- Fix attempt 2 (works): follow [Modal's own vLLM guide](https://modal.com/docs/examples/vllm_inference).
+  Start from `nvidia/cuda:13.0.3-devel-ubuntu24.04` (the CUDA *devel* image, which includes nvcc),
+  add Modal's standalone Python 3.12 with `add_python="3.12"`, then `pip install vllm==0.33.0`.
+  CUDA 13.0.3 matches the official vLLM build. Both failed attempts cost $0, because they failed
+  before any GPU was allocated.
+- We use the same image for our engine, so both sides run identical torch/CUDA.
 - **Lesson:** "stock vLLM" should mean the official image, not a pip install. Performance
   libraries increasingly JIT-compile kernels at runtime and need a full CUDA toolkit.
 
