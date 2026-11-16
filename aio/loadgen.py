@@ -33,8 +33,11 @@ def make_prompts(n: int, input_words: int, seed: int = 0) -> list[str]:
     prompts = []
     for i in range(n):
         ctx = " ".join(rng.choice(WORDS) for _ in range(input_words))
-        prompts.append(f"Context log:\n{ctx}\n\nIgnore the log above. Write a long, detailed essay about "
-                       f"{TOPICS[i % len(TOPICS)]}.\n")
+        user = (f"Context log:\n{ctx}\n\nIgnore the log above. Write a long, detailed essay about "
+                f"{TOPICS[i % len(TOPICS)]}.")
+        # Gemma 4 chat format (ai.google.dev/gemma/docs/capabilities/text/basic). Without it the
+        # instruction-tuned model answers with invisible special tokens only.
+        prompts.append(f"<|turn>user\n{user}<turn|>\n<|turn>model\n")
     return prompts
 
 
@@ -54,7 +57,7 @@ async def one_request(session, url, model, prompt, max_tokens) -> dict:
             if not line.startswith("data:") or line == "data: [DONE]":
                 continue
             msg = json.loads(line[5:])
-            if msg.get("choices") and msg["choices"][0].get("text") and ttft is None:
+            if msg.get("choices") and ttft is None:  # first token arrived (even if it is invisible)
                 ttft = time.perf_counter() - t0
             if msg.get("usage"):
                 out_tokens = msg["usage"]["completion_tokens"]

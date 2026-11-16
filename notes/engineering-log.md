@@ -195,3 +195,22 @@ Kernel targets come from Stage 0:
 
 The environment variable names were verified in the source code: `flashinfer/jit/env.py` and `vllm/envs.py`.
 The new env layer sits on top of the cached pip layer, so adding it only rebuilds a tiny layer.
+
+### 12. Milestone 1, first results: our engine is CORRECT ✅
+| Engine | Oracle check (8 prompts, greedy, 64 tokens) |
+|---|---|
+| stock vLLM 0.33 | 7/8 exact, 88% average common prefix |
+| **our engine (eager)** | 6/8 exact, 84% average common prefix |
+| **our engine (CUDA graphs)** | 6/8 exact, 84% (identical to eager, as it should be) |
+
+- Both engines diverge on the **same** prompt (the prime-number one), at the same near-tie.
+  That's the prompt where the L4 and L40S runs of the official code also disagreed.
+- Our second divergence happens 71% of the way into the answer. It's a late near-tie, not a bug:
+  everything before it matches token for token.
+- Our engine starts up in **12–16 s**, vs **260 s** for vLLM (torch.compile and graph capture,
+  uncached). Capturing all 5 CUDA graphs takes 1.0 s.
+- *Bug in our load generator:* the benchmark prompts were raw text with no chat template. The
+  instruction-tuned model answered with special tokens only, so no visible text ever arrived and
+  TTFT was never set.
+  - Fix: wrap the prompts in Gemma's `<|turn>user … <turn|>\n<|turn>model\n` format.
+  - Also: TTFT now starts at the first streamed chunk.
