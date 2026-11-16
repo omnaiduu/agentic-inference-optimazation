@@ -21,7 +21,7 @@ from aio.engine.model import EOS_IDS, Gemma4E2B
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model-dir", required=True)
-    ap.add_argument("--mode", choices=["eager", "graph"], default="graph")
+    ap.add_argument("--mode", choices=["eager", "graph", "compile"], default="graph")
     ap.add_argument("--port", type=int, default=8001)
     ap.add_argument("--max-len", type=int, default=4096)
     args = ap.parse_args()
@@ -30,11 +30,13 @@ def main():
     tok = AutoTokenizer.from_pretrained(args.model_dir)
     model = Gemma4E2B(args.model_dir, max_len=args.max_len)
     print(f"weights loaded in {time.time() - t0:.1f}s", flush=True)
-    if args.mode == "graph":
+    if args.mode == "compile":
+        model.enable_compile()
+    if args.mode in ("graph", "compile"):
         t1 = time.time()
         model.capture_graphs()
         print(f"captured {len(model.graphs)} CUDA graphs in {time.time() - t1:.1f}s", flush=True)
-    decode = model.decode_graph if args.mode == "graph" else model.decode_eager
+    decode = model.decode_eager if args.mode == "eager" else model.decode_graph
     lock = threading.Lock()
 
     def generate(prompt_ids, max_tokens, ignore_eos, emit):

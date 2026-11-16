@@ -78,6 +78,17 @@ class Gemma4E2B:
         # Pre-transpose nothing: F.linear(x, W) computes x @ W.T just like nn.Linear.
         self.layer_w = [{k.split(f"layers.{i}.", 1)[1]: v for k, v in self.W.items()
                          if k.startswith(f"layers.{i}.")} for i in range(self.L)]
+        # Fusion: one matmul instead of three (q,k,v) / two (gate,up). Fewer, bigger kernels.
+        for i, w in enumerate(self.layer_w):
+            if i < self.first_shared:
+                w["qkv"] = torch.cat([w.pop("self_attn.q_proj.weight"), w.pop("self_attn.k_proj.weight"),
+                                      w.pop("self_attn.v_proj.weight")])
+            else:
+                w["qkv"] = w.pop("self_attn.q_proj.weight")
+            w["gate_up"] = torch.cat([w.pop("mlp.gate_proj.weight"), w.pop("mlp.up_proj.weight")])
+        for k in [k for k in self.W if k.startswith("layers.")]:
+            del self.W[k]  # the per-layer dicts now own these tensors
+        torch.cuda.empty_cache()
 
         # Detail 1: scales cast to the weight dtype exactly like the reference.
         self.embed_scale = torch.tensor(self.hidden ** 0.5, dtype=self.dtype, device=device)
@@ -110,6 +121,14 @@ class Gemma4E2B:
         self.static_tok = torch.zeros(1, dtype=torch.long, device=device)
         self.static_pos = torch.zeros(1, dtype=torch.long, device=device)
         self.static_out = torch.zeros(1, dtype=torch.long, device=device)
+        self.step_fn = self.forward  # replaced by a torch.compile'd version in compile mode
+
+    def enable_compile(self):
+        """Let TorchInductor fuse the ~1,000 tiny elementwise kernels per step into a few dozen.
+        (e.g. one RMSNorm = cast, square, mean, add, rsqrt, mul, mul, cast -> ONE kernel)."""
+        import torch._dynamo
+        torch._dynamo.config.cache_size_limit = 32
+        self.step_fn = torch.compile(self.forward, fullgraph=True, dynamic=False)
 
     # ------------------------------------------------------------------ math
     def rope(self, positions: torch.Tensor, full: bool):
@@ -149,12 +168,13 @@ class Gemma4E2B:
 
             # --- attention block ---
             h = rms_norm(x, w["input_layernorm.weight"], eps)
-            q = F.linear(h, w["self_attn.q_proj.weight"]).view(T, self.n_heads, hd)
+            qkv = F.linear(h, w["qkv"])
+            q = qkv[:, :self.n_heads * hd].view(T, self.n_heads, hd)
             q = rms_norm(q, w["self_attn.q_norm.weight"], eps)
             q = q * cos[:, None] + rotate_half(q) * sin[:, None]
             if i < self.first_shared:
-                k = F.linear(h, w["self_attn.k_proj.weight"]).view(T, hd)
-                v = F.linear(h, w["self_attn.v_proj.weight"]).view(T, hd)
+                k = qkv[:, self.n_heads * hd:(self.n_heads + 1) * hd]
+                v = qkv[:, (self.n_heads + 1) * hd:]
                 k = rms_norm(k, w["self_attn.k_norm.weight"], eps)
                 k = k * cos + rotate_half(k) * sin
                 v = rms_norm(v, None, eps)
@@ -162,7 +182,7 @@ class Gemma4E2B:
                 self.v_cache[i].index_copy_(0, positions, v)
             K = self.k_cache[self.kv_src[i]][:S]                                      # [S, hd]
             V = self.v_cache[self.kv_src[i]][:S]
-            scores = torch.einsum("thd,sd->hts", q.float(), K.float())               # scale = 1.0
+            scores = torch.einsum("thd,sd->hts", q, K).float()                       # scale = 1.0
             scores = scores.masked_fill(~masks[full][None], float("-inf"))
             probs = torch.softmax(scores, dim=-1).to(self.dtype)
             a = torch.einsum("hts,sd->thd", probs, V).reshape(T, self.n_heads * hd)
@@ -171,8 +191,8 @@ class Gemma4E2B:
 
             # --- MLP block (GELU-tanh gated) ---
             h = rms_norm(x, w["pre_feedforward_layernorm.weight"], eps)
-            h = F.linear(F.gelu(F.linear(h, w["mlp.gate_proj.weight"]), approximate="tanh")
-                         * F.linear(h, w["mlp.up_proj.weight"]), w["mlp.down_proj.weight"])
+            gate, up = F.linear(h, w["gate_up"]).chunk(2, dim=-1)
+            h = F.linear(F.gelu(gate, approximate="tanh") * up, w["mlp.down_proj.weight"])
             x = x + rms_norm(h, w["post_feedforward_layernorm.weight"], eps)
 
             # --- per-layer embedding injection ---
@@ -222,11 +242,11 @@ class Gemma4E2B:
             s.wait_stream(torch.cuda.current_stream())
             with torch.cuda.stream(s):
                 for _ in range(2):  # warm up allocator / kernels outside the graph
-                    self.static_out.copy_(self.forward(self.static_tok, self.static_pos, S))
+                    self.static_out.copy_(self.step_fn(self.static_tok, self.static_pos, S))
             torch.cuda.current_stream().wait_stream(s)
             g = torch.cuda.CUDAGraph()
             with torch.cuda.graph(g):
-                self.static_out.copy_(self.forward(self.static_tok, self.static_pos, S))
+                self.static_out.copy_(self.step_fn(self.static_tok, self.static_pos, S))
             self.graphs[S] = g
             if S >= self.max_len:
                 break

@@ -53,7 +53,7 @@ def run_engine(ref: dict, modes: list[str]) -> dict:
 
 
 @app.local_entrypoint()
-def main(modes: str = "eager,graph"):
+def main(modes: str = "graph,compile"):
     ref = json.loads(pathlib.Path("results/s1_reference.json").read_text())
     res = run_engine.remote(ref, modes.split(","))
     out = pathlib.Path(f"results/m1_engine_{GPU}.json")
