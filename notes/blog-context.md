@@ -59,8 +59,18 @@ on a B200, with ~1 week and ~$1,000s of compute
    **GSM8K went 74% → 17%**. Fixed in two lines.
    - This is the best illustration of Baseten's warning: an optimizing agent will happily ship
      "fast but broken".
-7. **Continuous batching** (in progress at the end of day 1): a small-batch int4 GEMM on tensor
-   cores, 32 KV slots with compaction, and a scheduler thread.
+7. **Continuous batching:** a small-batch int4 GEMM on tensor cores, 32 KV slots with compaction,
+   and a scheduler thread. Accuracy held (91.2% agreement, GSM8K 66%), and throughput rose 6.7x from
+   1 to 32 users, but **vLLM still wins at scale**:
+   | Users | Ours total tok/s | vLLM QAT total tok/s |
+   |---|---|---|
+   | 1 | 281 | 211 |
+   | 8 | 1,151 | 1,442 |
+   | 32 | 1,888 | 3,757 |
+   The cause is visible: our prefill is one request at a time (TTFT 856 ms at 32 users), and our
+   attention is not a real decode kernel. vLLM's years of serving work (chunked prefill, paged
+   attention) matter exactly here. Honest takeaway: **a one-day engine can win single-user latency;
+   multi-user serving is where mature engines earn their keep.**
 
 ## Quotable lessons
 - **Decode is a memory problem, not a maths problem.** At batch 1 the L40S needs 5.3 ms to read
@@ -81,8 +91,8 @@ on a B200, with ~1 week and ~$1,000s of compute
   - asking what it saves in dollars
 
 ## Honest limitations (put these in the post)
-- One GPU type (L40S), one model, single-stream latency. Batched throughput is not yet compared
-  (vLLM QAT reaches 3,757 tok/s at 32 users; our batching engine is being tested).
+- One GPU type (L40S), one model. We win single-user speed; at 8 and 32 users vLLM is 1.25x and
+  2x ahead on total throughput.
 - GSM8K-100 has about ±5 points of noise. The QAT checkpoint costs about 3–6 points vs bf16 (near
   the noise floor). Our int4 lm_head adds nothing measurable on top.
 - TTFT is 38–40 ms vs vLLM's 34 ms. Our prefill is eager PyTorch.
@@ -96,7 +106,7 @@ on a B200, with ~1 week and ~$1,000s of compute
   - The fix was Modal's recipe: CUDA devel image + `add_python`.
 
 ## Still to do (day 2)
-- Batching results vs vLLM at 8 and 32 users.
+- Close the batching gap: batched/chunked prefill and a flash-decode attention kernel.
 - Deeper fusion (toward a per-layer "megakernel").
 - An H100 run for the headline numbers.
 - Optionally Gemma's MTP speculative decoding (+30% per Google).

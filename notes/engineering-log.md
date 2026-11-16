@@ -451,3 +451,27 @@ and used B times.
 - **Accuracy checks reuse the gate:**
   - Teacher-forced agreement now runs through the *batched* path (batch of 1).
   - GSM8K sends 16 requests at a time, so it exercises real batching.
+
+### Result (L40S, ~1,100-token prompts, 256 output tokens)
+| Users | Ours: total tok/s | Ours: TTFT p50 | Ours: TPOT p50 | vLLM QAT: total tok/s |
+|---|---|---|---|---|
+| 1 | 281 (297 per user) | 54 ms | 3.4 ms | 211 per user |
+| 8 | **1,151** | 241 ms | 6.0 ms | 1,442 |
+| 32 | **1,888** | 856 ms | 13.6 ms | 3,757 |
+
+- **Accuracy held:** agreement 91.2% (identical to the single-user engine), GSM8K 66% (vs 70%;
+  inside the ±5-point noise of 100 questions, and this run really batched 16 requests at once).
+- **Batching works:** 1 → 32 users gives 6.7x more total tokens from the same GPU.
+- **But vLLM wins at scale:** 0.80x of vLLM at 8 users and 0.50x at 32. We still win at 1 user
+  (1.4x here; slightly slower than the 343 tok/s single-user server because of the batch bookkeeping).
+- **Why we lose (read from the numbers):**
+  - **TTFT grows to 856 ms at 32 users.** Our prefill runs one request at a time, in eager PyTorch,
+    and it blocks decode for everyone while it runs. vLLM uses chunked prefill: it mixes prompt
+    chunks into the decode batches, so nobody waits for a whole prompt.
+  - **TPOT 13.6 ms at 32 users vs 3.4 ms at 1.** Weights are read once, but attention reads each
+    user's KV cache separately, and our attention is plain einsum + softmax (no paged / flash
+    decode kernel). At 32 × ~1,200 tokens the KV reads and the small GEMM tiles start to dominate.
+  - **Startup took 29 minutes** (24 batch graphs + 4 single graphs, compiled on cold caches).
+    The compile cache in the Modal volume should cut this next time.
+- **Day-2 fixes, in order of expected payoff:** batched/chunked prefill, a flash-decode attention
+  kernel over all slots, then re-measure against vLLM.
