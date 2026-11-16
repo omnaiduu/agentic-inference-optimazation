@@ -25,6 +25,7 @@ from aio.s1_baseline import COMMON, MODEL_SHA
 QAT_ID = "google/gemma-4-E2B-it-qat-w4a16-ct"
 QAT_SHA = "971342c08f607aa7779983f6b5289778b5d271a7"
 ALL = ["vllm-bf16", "vllm-qat", "ours-bf16", "ours-qat", "ours-qat-lm8", "ours-qat-lm4"]
+# ours-batch: QAT int4 + int4 lm_head + continuous batching (aio/engine/server_batch.py)
 
 app = modal.App("aio-m2")
 image = gpu_image
@@ -46,6 +47,11 @@ def run_config(name: str, ref: dict) -> dict:
     if engine == "vllm":
         model, rev = (QAT_ID, QAT_SHA) if "qat" in name else (MODEL_ID, MODEL_SHA)
         cmd = ["vllm", "serve", model, "--revision", rev, "--port", "8000", *COMMON]
+        url, levels = "http://127.0.0.1:8000", (1, 8, 32)
+    elif name == "ours-batch":
+        model = MODEL_ID
+        cmd = ["python", "-m", "aio.engine.server_batch", "--model-dir", bf_dir, "--quant-dir", q_dir,
+               "--lm-head-bits", "4", "--port", "8000"]
         url, levels = "http://127.0.0.1:8000", (1, 8, 32)
     else:
         model = MODEL_ID
