@@ -1,0 +1,138 @@
+{
+ "engine": "vllm==0.33.0",
+ "config": "default",
+ "args": [
+  "vllm",
+  "serve",
+  "google/gemma-4-E2B-it",
+  "--revision",
+  "4adf15748de9e1a0097b6274cee9c15836c41c37",
+  "--port",
+  "8000",
+  "--max-model-len",
+  "4096",
+  "--gpu-memory-utilization",
+  "0.90",
+  "--limit-mm-per-prompt",
+  "{\"image\": 0, \"audio\": 0}"
+ ],
+ "gpu": "L40S",
+ "startup_s": 268.15558886528015,
+ "correctness": {
+  "exact": 7,
+  "total": 8,
+  "avg_common_prefix": 0.8774606299212598,
+  "rows": [
+   {
+    "exact": true,
+    "common_prefix_frac": 1.0,
+    "got": "The capital of France is Paris.",
+    "want": "The capital of France is Paris."
+   },
+   {
+    "exact": false,
+    "common_prefix_frac": 0.01968503937007874,
+    "got": "Here are a few ways to write a Python function to check if a number is prime, ranging from a basic implementation to a more optimized one.\n\n### 1. Basic and Eas",
+    "want": "Here is a Python function that checks whether a given integer is a prime number.\n\n### Python Function\n\n```python\ndef is_prime(n):\n    \"\"\"\n    Checks if a given "
+   },
+   {
+    "exact": true,
+    "common_prefix_frac": 1.0,
+    "got": "Imagine you have two kinds of helpers for your computer:\n\n1. **The Brain (CPU):** This is like the **boss** or the **manager** of the computer. It's really good",
+    "want": "Imagine you have two kinds of helpers for your computer:\n\n1. **The Brain (CPU):** This is like the **boss** or the **manager** of the computer. It's really good"
+   },
+   {
+    "exact": true,
+    "common_prefix_frac": 1.0,
+    "got": "Here are three key differences between TCP (Transmission Control Protocol) and UDP (User Datagram Protocol):\n\n1. **Connection Orientation (Reliability & Setup):",
+    "want": "Here are three key differences between TCP (Transmission Control Protocol) and UDP (User Datagram Protocol):\n\n1. **Connection Orientation (Reliability & Setup):"
+   },
+   {
+    "exact": true,
+    "common_prefix_frac": 1.0,
+    "got": "Here are a few ways to translate \"The weather is nice today and I want to go for a walk\" to Spanish, depending on the nuance you prefer:\n\n**Most common and natu",
+    "want": "Here are a few ways to translate \"The weather is nice today and I want to go for a walk\" to Spanish, depending on the nuance you prefer:\n\n**Most common and natu"
+   },
+   {
+    "exact": true,
+    "common_prefix_frac": 1.0,
+    "got": "Here are a few ways to calculate $17 \\times 23$:\n\n### Method 1: Standard Multiplication\n\nMultiply 17 by each digit of 23, starting with the ones place.\n\n1. **Mu",
+    "want": "Here are a few ways to calculate $17 \\times 23$:\n\n### Method 1: Standard Multiplication\n\nMultiply 17 by each digit of 23, starting with the ones place.\n\n1. **Mu"
+   },
+   {
+    "exact": true,
+    "common_prefix_frac": 1.0,
+    "got": "Logic takes its form,\nPatterns guide the hidden truth,\nAnswers now appear.",
+    "want": "Logic takes its form,\nPatterns guide the hidden truth,\nAnswers now appear."
+   },
+   {
+    "exact": true,
+    "common_prefix_frac": 1.0,
+    "got": "Fact 5: the box number 5 contains 9 red balls.\nFact 100: the box number 100 contains 11 red balls.\n\nThere are **9** red balls in box number 5 and **11** red bal",
+    "want": "Fact 5: the box number 5 contains 9 red balls.\nFact 100: the box number 100 contains 11 red balls.\n\nThere are **9** red balls in box number 5 and **11** red bal"
+   }
+  ]
+ },
+ "bench": [
+  {
+   "concurrency": 1,
+   "requests": 4,
+   "ttft_ms_p50": 33.630614499998046,
+   "ttft_ms_p90": 34.34813299998041,
+   "tpot_ms_p50": 7.783870921568504,
+   "tpot_ms_p90": 7.784616647058877,
+   "per_user_tok_s": 128.47078401943656,
+   "throughput_tok_s": 126.8399779892453,
+   "wall_s": 8.073164441000017
+  },
+  {
+   "concurrency": 8,
+   "requests": 24,
+   "ttft_ms_p50": 93.18515649999881,
+   "ttft_ms_p90": 139.65697699995872,
+   "tpot_ms_p50": 8.641788980392171,
+   "tpot_ms_p90": 8.795450972549107,
+   "per_user_tok_s": 115.71678066531766,
+   "throughput_tok_s": 884.0277232682532,
+   "wall_s": 6.950008283999978
+  },
+  {
+   "concurrency": 32,
+   "requests": 96,
+   "ttft_ms_p50": 155.0953379999669,
+   "ttft_ms_p90": 469.73627400001305,
+   "tpot_ms_p50": 11.258652603921592,
+   "tpot_ms_p90": 11.511158145098012,
+   "per_user_tok_s": 88.82057517714705,
+   "throughput_tok_s": 2666.4563779847813,
+   "wall_s": 9.216726814999959
+  }
+ ],
+ "server_log_highlights": [
+  "Capturing CUDA graphs (PIECEWISE):  78%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258a  | 40/51 [00:02<00:00, 18.22it/s]",
+  "Capturing CUDA graphs (PIECEWISE):  82%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258f | 42/51 [00:02<00:00, 18.20it/s]",
+  "Capturing CUDA graphs (PIECEWISE):  86%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258b | 44/51 [00:02<00:00, 18.26it/s]",
+  "Capturing CUDA graphs (PIECEWISE):  90%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 | 46/51 [00:02<00:00, 18.20it/s]",
+  "Capturing CUDA graphs (PIECEWISE):  94%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258d| 48/51 [00:02<00:00, 18.40it/s]",
+  "Capturing CUDA graphs (PIECEWISE):  98%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258a| 50/51 [00:02<00:00, 18.52it/s]",
+  "Capturing CUDA graphs (PIECEWISE): 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 51/51 [00:02<00:00, 18.23it/s]",
+  "Capturing CUDA graphs (FULL):   0%|          | 0/35 [00:00<?, ?it/s]",
+  "Capturing CUDA graphs (FULL):   9%|\u258a         | 3/35 [00:00<00:01, 21.87it/s]",
+  "Capturing CUDA graphs (FULL):  17%|\u2588\u258b        | 6/35 [00:00<00:01, 21.31it/s]",
+  "Capturing CUDA graphs (FULL):  26%|\u2588\u2588\u258c       | 9/35 [00:00<00:01, 20.60it/s]",
+  "Capturing CUDA graphs (FULL):  34%|\u2588\u2588\u2588\u258d      | 12/35 [00:00<00:01, 20.50it/s]",
+  "Capturing CUDA graphs (FULL):  43%|\u2588\u2588\u2588\u2588\u258e     | 15/35 [00:00<00:00, 20.41it/s]",
+  "Capturing CUDA graphs (FULL):  51%|\u2588\u2588\u2588\u2588\u2588\u258f    | 18/35 [00:00<00:00, 20.26it/s]",
+  "Capturing CUDA graphs (FULL):  60%|\u2588\u2588\u2588\u2588\u2588\u2588    | 21/35 [00:01<00:00, 20.26it/s]",
+  "Capturing CUDA graphs (FULL):  69%|\u2588\u2588\u2588\u2588\u2588\u2588\u258a   | 24/35 [00:01<00:00, 19.78it/s]",
+  "Capturing CUDA graphs (FULL):  77%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258b  | 27/35 [00:01<00:00, 19.45it/s]",
+  "Capturing CUDA graphs (FULL):  83%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258e | 29/35 [00:01<00:00, 19.27it/s]",
+  "Capturing CUDA graphs (FULL):  89%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258a | 31/35 [00:01<00:00, 18.84it/s]",
+  "Capturing CUDA graphs (FULL):  94%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258d| 33/35 [00:01<00:00, 19.01it/s]",
+  "Capturing CUDA graphs (FULL): 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 35/35 [00:01<00:00, 19.93it/s]",
+  "(EngineCore pid=30) INFO 11-16 09:56:04 [gpu_worker.py:1003] CUDA graph pool memory: 0.27 GiB (actual), 0.52 GiB (estimated), difference: 0.24 GiB (89.9%).",
+  "(APIServer pid=4) INFO 11-16 09:56:20 [loggers.py:335] Engine 000: Avg prompt throughput: 384.0 tokens/s, Avg generation throughput: 56.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%",
+  "(APIServer pid=4) INFO 11-16 09:56:30 [loggers.py:335] Engine 000: Avg prompt throughput: 1313.4 tokens/s, Avg generation throughput: 463.3 tokens/s, Running: 8 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.3%, Prefix cache hit rate: 0.0%",
+  "(APIServer pid=4) INFO 11-16 09:56:40 [loggers.py:335] Engine 000: Avg prompt throughput: 7588.5 tokens/s, Avg generation throughput: 2136.5 tokens/s, Running: 32 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.2%, Prefix cache hit rate: 0.0%"
+ ]
+}

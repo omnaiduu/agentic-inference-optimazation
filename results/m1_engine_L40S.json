@@ -3,10 +3,146 @@
  "gpu": "L40S",
  "results": {
   "eager": {
-   "error": "TypeError(\"unsupported operand type(s) for -: 'float' and 'NoneType'\")"
+   "startup_s": 18.013066053390503,
+   "correctness": {
+    "exact": 6,
+    "total": 8,
+    "avg_common_prefix": 0.8413934362453706,
+    "rows": [
+     {
+      "exact": true,
+      "common_prefix_frac": 1.0,
+      "got": "The capital of France is Paris.",
+      "want": "The capital of France is Paris."
+     },
+     {
+      "exact": false,
+      "common_prefix_frac": 0.01968503937007874,
+      "got": "Here are a few ways to write a Python function to check if a number is prime, ranging from a basic implementation to a more optimized one.\n\n### 1. Basic and Eas",
+      "want": "Here is a Python function that checks whether a given integer is a prime number.\n\n### Python Function\n\n```python\ndef is_prime(n):\n    \"\"\"\n    Checks if a given "
+     },
+     {
+      "exact": false,
+      "common_prefix_frac": 0.7114624505928854,
+      "got": "Imagine you have two kinds of helpers for your computer:\n\n1. **The Brain (CPU):** This is like the **boss** or the **manager** of the computer. It's really good",
+      "want": "Imagine you have two kinds of helpers for your computer:\n\n1. **The Brain (CPU):** This is like the **boss** or the **manager** of the computer. It's really good"
+     },
+     {
+      "exact": true,
+      "common_prefix_frac": 1.0,
+      "got": "Here are three key differences between TCP (Transmission Control Protocol) and UDP (User Datagram Protocol):\n\n1. **Connection Orientation (Reliability & Setup):",
+      "want": "Here are three key differences between TCP (Transmission Control Protocol) and UDP (User Datagram Protocol):\n\n1. **Connection Orientation (Reliability & Setup):"
+     },
+     {
+      "exact": true,
+      "common_prefix_frac": 1.0,
+      "got": "Here are a few ways to translate \"The weather is nice today and I want to go for a walk\" to Spanish, depending on the nuance you prefer:\n\n**Most common and natu",
+      "want": "Here are a few ways to translate \"The weather is nice today and I want to go for a walk\" to Spanish, depending on the nuance you prefer:\n\n**Most common and natu"
+     },
+     {
+      "exact": true,
+      "common_prefix_frac": 1.0,
+      "got": "Here are a few ways to calculate $17 \\times 23$:\n\n### Method 1: Standard Multiplication\n\nMultiply 17 by each digit of 23, starting with the ones place.\n\n1. **Mu",
+      "want": "Here are a few ways to calculate $17 \\times 23$:\n\n### Method 1: Standard Multiplication\n\nMultiply 17 by each digit of 23, starting with the ones place.\n\n1. **Mu"
+     },
+     {
+      "exact": true,
+      "common_prefix_frac": 1.0,
+      "got": "Logic takes its form,\nPatterns guide the hidden truth,\nAnswers now appear.",
+      "want": "Logic takes its form,\nPatterns guide the hidden truth,\nAnswers now appear."
+     },
+     {
+      "exact": true,
+      "common_prefix_frac": 1.0,
+      "got": "Fact 5: the box number 5 contains 9 red balls.\nFact 100: the box number 100 contains 11 red balls.\n\nThere are **9** red balls in box number 5 and **11** red bal",
+      "want": "Fact 5: the box number 5 contains 9 red balls.\nFact 100: the box number 100 contains 11 red balls.\n\nThere are **9** red balls in box number 5 and **11** red bal"
+     }
+    ]
+   },
+   "bench": [
+    {
+     "concurrency": 1,
+     "requests": 4,
+     "ttft_ms_p50": 50.916958000001955,
+     "ttft_ms_p90": 51.98646899999915,
+     "tpot_ms_p50": 46.31258939607842,
+     "tpot_ms_p90": 46.328663215686284,
+     "per_user_tok_s": 21.592400965701053,
+     "throughput_tok_s": 21.612965422241274,
+     "wall_s": 47.378968132999994
+    }
+   ]
   },
   "graph": {
-   "error": "TypeError(\"unsupported operand type(s) for -: 'float' and 'NoneType'\")"
+   "startup_s": 14.00955581665039,
+   "correctness": {
+    "exact": 6,
+    "total": 8,
+    "avg_common_prefix": 0.8413934362453706,
+    "rows": [
+     {
+      "exact": true,
+      "common_prefix_frac": 1.0,
+      "got": "The capital of France is Paris.",
+      "want": "The capital of France is Paris."
+     },
+     {
+      "exact": false,
+      "common_prefix_frac": 0.01968503937007874,
+      "got": "Here are a few ways to write a Python function to check if a number is prime, ranging from a basic implementation to a more optimized one.\n\n### 1. Basic and Eas",
+      "want": "Here is a Python function that checks whether a given integer is a prime number.\n\n### Python Function\n\n```python\ndef is_prime(n):\n    \"\"\"\n    Checks if a given "
+     },
+     {
+      "exact": false,
+      "common_prefix_frac": 0.7114624505928854,
+      "got": "Imagine you have two kinds of helpers for your computer:\n\n1. **The Brain (CPU):** This is like the **boss** or the **manager** of the computer. It's really good",
+      "want": "Imagine you have two kinds of helpers for your computer:\n\n1. **The Brain (CPU):** This is like the **boss** or the **manager** of the computer. It's really good"
+     },
+     {
+      "exact": true,
+      "common_prefix_frac": 1.0,
+      "got": "Here are three key differences between TCP (Transmission Control Protocol) and UDP (User Datagram Protocol):\n\n1. **Connection Orientation (Reliability & Setup):",
+      "want": "Here are three key differences between TCP (Transmission Control Protocol) and UDP (User Datagram Protocol):\n\n1. **Connection Orientation (Reliability & Setup):"
+     },
+     {
+      "exact": true,
+      "common_prefix_frac": 1.0,
+      "got": "Here are a few ways to translate \"The weather is nice today and I want to go for a walk\" to Spanish, depending on the nuance you prefer:\n\n**Most common and natu",
+      "want": "Here are a few ways to translate \"The weather is nice today and I want to go for a walk\" to Spanish, depending on the nuance you prefer:\n\n**Most common and natu"
+     },
+     {
+      "exact": true,
+      "common_prefix_frac": 1.0,
+      "got": "Here are a few ways to calculate $17 \\times 23$:\n\n### Method 1: Standard Multiplication\n\nMultiply 17 by each digit of 23, starting with the ones place.\n\n1. **Mu",
+      "want": "Here are a few ways to calculate $17 \\times 23$:\n\n### Method 1: Standard Multiplication\n\nMultiply 17 by each digit of 23, starting with the ones place.\n\n1. **Mu"
+     },
+     {
+      "exact": true,
+      "common_prefix_frac": 1.0,
+      "got": "Logic takes its form,\nPatterns guide the hidden truth,\nAnswers now appear.",
+      "want": "Logic takes its form,\nPatterns guide the hidden truth,\nAnswers now appear."
+     },
+     {
+      "exact": true,
+      "common_prefix_frac": 1.0,
+      "got": "Fact 5: the box number 5 contains 9 red balls.\nFact 100: the box number 100 contains 11 red balls.\n\nThere are **9** red balls in box number 5 and **11** red bal",
+      "want": "Fact 5: the box number 5 contains 9 red balls.\nFact 100: the box number 100 contains 11 red balls.\n\nThere are **9** red balls in box number 5 and **11** red bal"
+     }
+    ]
+   },
+   "bench": [
+    {
+     "concurrency": 1,
+     "requests": 4,
+     "ttft_ms_p50": 51.91563300000013,
+     "ttft_ms_p90": 55.02590499999371,
+     "tpot_ms_p50": 11.728510847058816,
+     "tpot_ms_p90": 11.756717337254885,
+     "per_user_tok_s": 85.26231616614587,
+     "throughput_tok_s": 84.09994451598143,
+     "wall_s": 12.175989008000002
+    }
+   ]
   }
  }
 }

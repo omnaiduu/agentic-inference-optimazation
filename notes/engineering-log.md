@@ -214,3 +214,23 @@ The new env layer sits on top of the cached pip layer, so adding it only rebuild
   TTFT was never set.
   - Fix: wrap the prompts in Gemma's `<|turn>user … <turn|>\n<|turn>model\n` format.
   - Also: TTFT now starts at the first streamed chunk.
+
+### 13. Milestone 1 speed results (L40S, prompt ~1,100 tokens, 256 output tokens)
+| Engine | 1 user: TPOT | 1 user: tok/s | TTFT (1 user) | % of speed of light (188 tok/s) |
+|---|---|---|---|---|
+| stock vLLM 0.33 | 7.78 ms | **128.5** | 33.6 ms | 68% |
+| our engine, eager | 46.31 ms | 21.6 | 50.9 ms | 11% |
+| our engine, CUDA graphs | 11.73 ms | **85.3** | 51.9 ms | 45% |
+
+vLLM at higher load: 8 users → 884 tok/s total (116 tok/s each); 32 users → 2,667 tok/s total (89 tok/s each).
+
+**Lesson 1: CUDA graphs alone gave a 4x speed-up (21.6 → 85.3 tok/s), with zero maths changes.**
+In eager mode, the GPU sits idle waiting for the CPU (Python) to launch the next of ~1,000 tiny kernels.
+
+**Lesson 2: we're still at 66% of vLLM.** The speed of light per token is 4.6 GB ÷ 864 GB/s = 5.3 ms.
+vLLM spends 7.8 ms per token, and we spend 11.7 ms. Suspects:
+- **Unfused elementwise ops.** Each RMSNorm is ~6 separate kernels (float cast, pow, mean, add, pow,
+  mul, cast), and there are ~6 norms × 35 layers. Even inside a CUDA graph, each kernel costs a few
+  µs of fixed overhead, and ~1,000 kernels × ~3 µs ≈ 3 ms. That's most of the gap.
+- Separate q/k/v and gate/up matmuls: more kernels, and each one reads less data per launch.
+- Attention upcasts K/V to fp32 over the whole cache bucket.
