@@ -98,3 +98,6 @@ Observations worth a blog paragraph:
 - **Baseline:** stock vLLM 0.33.0, measured with our own load generator (`aio/loadgen.py`).
   - Same client for every engine, so the comparison is fair.
   - `ignore_eos` forces an identical amount of work per request.
+- *Hiccup:* the first oracle run crashed. `device_map="cuda"` in `from_pretrained` needs the
+  `accelerate` package, which we hadn't installed. Fixed with a plain `.to("cuda")`.
+  Cost: ~1 minute of container time.

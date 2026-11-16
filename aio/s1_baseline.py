@@ -53,8 +53,7 @@ def reference() -> dict:
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained(MODEL_ID, revision=MODEL_SHA)
-    model = AutoModelForCausalLM.from_pretrained(MODEL_ID, revision=MODEL_SHA, dtype=torch.bfloat16,
-                                                 device_map="cuda")
+    model = AutoModelForCausalLM.from_pretrained(MODEL_ID, revision=MODEL_SHA, dtype=torch.bfloat16).to("cuda")
     hf_cache.commit()
     out = []
     for p in CHECK_PROMPTS:
