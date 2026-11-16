@@ -7,8 +7,8 @@ MODEL_ID = "google/gemma-4-E2B-it"
 # Pin the exact weights so every experiment uses the same model files.
 MODEL_REVISION = os.environ.get("AIO_MODEL_REVISION", "main")
 
-# Default GPU is the cheapest one that fits (L4, ~$0.80/h). Override: AIO_GPU=H100 modal run ...
-GPU = os.environ.get("AIO_GPU", "L4")
+# Default GPU: L40S (~$1.95/h, Ada w/ FP8, 48 GB) - L4 was often unavailable. Override: AIO_GPU=H100 modal run ...
+GPU = os.environ.get("AIO_GPU", "L40S")
 
 VLLM_VERSION = "0.33.0"
 

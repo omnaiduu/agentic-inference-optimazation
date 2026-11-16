@@ -111,3 +111,26 @@ Observations worth a blog paragraph:
     exact `prompt_ids` to every engine.
 - **Status: still baseline.** Nothing has been optimized yet. Stage 1 only defines "correct"
   (the oracle) and "normal speed" (stock vLLM).
+
+### 6. GPU switch: L4 → L40S
+- L4 jobs sat for 10+ minutes with no container allocated. The likely cause is capacity.
+- We switched the default to **L40S**: same Ada generation (FP8 support), 864 GB/s, 48 GB, $1.95/h.
+- New speed-of-light target: **188 tok/s** in bf16 (from the Stage 0 table).
+
+### 7. Plan change: build our own engine first (user's call)
+We skip vLLM tuning for now. Instead:
+- answer key (oracle)
+- one stock vLLM baseline run
+- engine stages:
+  - **E1** correct PyTorch engine
+  - **E2** CUDA graphs
+  - **E3** custom Triton kernels: 4-bit layers, **4-bit lm_head**, fused ops
+  - **E4** speculative decoding
+  - **E5** batching / serving
+- The correctness check runs automatically inside every benchmark run (~10 s).
+
+Kernel targets come from Stage 0:
+- Google's QAT w4a16 checkpoint quantizes only `Linear` targets (group size 32), per its
+  [config](https://huggingface.co/google/gemma-4-E2B-it-qat-w4a16-ct).
+- Gemma's lm_head is tied to the embedding table, so it very likely stays bf16 (to verify on load).
+- With 4-bit layers, the bf16 lm_head becomes ~45% of the bytes read per token.
