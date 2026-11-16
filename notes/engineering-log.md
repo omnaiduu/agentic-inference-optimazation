@@ -399,3 +399,23 @@ because bf16 isn't our target path.
 - Fix: write `ring_pos` first, then build the mask.
 - **Lesson:** this is exactly the failure mode Baseten warns about. An optimization that "works"
   and is fast, but quietly breaks the model. Run the accuracy gate on every change, no exceptions.
+
+### 23. Milestone 3a results (L40S, same tests as M2)
+| Config | Agreement | GSM8K-100 | tok/s (1 user) | TPOT | TTFT |
+|---|---|---|---|---|---|
+| ours bf16, M2 | 99.8% | 74% | 125.3 | 7.98 ms | 52.3 ms |
+| ours bf16, **M3a** | 99.8% | 74% | 127.2 | 7.86 ms | **40.4 ms** |
+| ours int4 + int4 lm_head, M2 | 92.0% | 70% | 326.8 | 3.06 ms | 39.3 ms |
+| ours int4 + int4 lm_head, **M3a** | 91.2% | 70% | **342.7** | **2.92 ms** | 38.2 ms |
+
+- Accuracy is unchanged after the fix. The ring buffer is exact, as it should be.
+- **+4.9% decode speed** for int4 (326.8 → 342.7 tok/s). That's **1.63x vLLM QAT** (210.8) and
+  **2.67x vLLM bf16**.
+- bf16 TTFT dropped 23% (52 → 40 ms): prefill no longer touches a 4,096-row bucket.
+- Smaller gain than hoped. The int4 GEMV is still ~70% of the step at roughly 2/3 of peak bandwidth.
+  We're now at ~52% of the int4 speed of light (~655 tok/s).
+  - The remaining gap is spread over ~200 GEMV launches per token, each with a fixed startup tail
+    of a few µs.
+  - Closing it needs bigger changes: fusing whole layers into one kernel ("megakernels"), or a
+    Marlin-style weight layout.
+  - That's diminishing returns for this project, so we move on to batching.
