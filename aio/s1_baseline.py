@@ -17,7 +17,7 @@ import time
 
 import modal
 
-from aio.common import GPU, HF_HOME, MODEL_ID, VLLM_VERSION, gpu_image, hf_cache
+from aio.common import GPU, VOLUMES, commit_volumes, HF_HOME, MODEL_ID, VLLM_VERSION, gpu_image, hf_cache
 
 MODEL_SHA = "4adf15748de9e1a0097b6274cee9c15836c41c37"  # pinned from stage 0
 
@@ -46,7 +46,7 @@ CONFIGS = {
 }
 
 
-@app.function(image=gpu_image, gpu=GPU, volumes={HF_HOME: hf_cache}, timeout=1800)
+@app.function(image=gpu_image, gpu=GPU, volumes=VOLUMES, timeout=1800)
 def reference() -> dict:
     import torch
     import transformers
@@ -54,7 +54,7 @@ def reference() -> dict:
 
     tok = AutoTokenizer.from_pretrained(MODEL_ID, revision=MODEL_SHA)
     model = AutoModelForCausalLM.from_pretrained(MODEL_ID, revision=MODEL_SHA, dtype=torch.bfloat16).to("cuda")
-    hf_cache.commit()
+    commit_volumes()
     out = []
     for p in CHECK_PROMPTS:
         ids = tok.apply_chat_template([{"role": "user", "content": p}], add_generation_prompt=True,
@@ -72,7 +72,7 @@ def reference() -> dict:
             "torch": str(torch.__version__), "gpu": GPU, "cases": out}
 
 
-@app.function(image=gpu_image, gpu=GPU, volumes={HF_HOME: hf_cache}, timeout=3600)
+@app.function(image=gpu_image, gpu=GPU, volumes=VOLUMES, timeout=3600)
 def run_vllm(config: str, ref: dict) -> dict:
     import asyncio
 
@@ -86,7 +86,7 @@ def run_vllm(config: str, ref: dict) -> dict:
     url = "http://127.0.0.1:8000"
     try:
         startup = wait_ready(url, proc)
-        hf_cache.commit()
+        commit_volumes()
         print(f"  server ready in {startup:.0f}s", flush=True)
         corr = check_correctness(url, ref, MODEL_ID)
         bench = asyncio.run(loadgen.run_all(url, MODEL_ID))

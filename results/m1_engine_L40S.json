@@ -1,0 +1,12 @@
+{
+ "engine": "aio-gemma4-m1",
+ "gpu": "L40S",
+ "results": {
+  "eager": {
+   "error": "TypeError(\"unsupported operand type(s) for -: 'float' and 'NoneType'\")"
+  },
+  "graph": {
+   "error": "TypeError(\"unsupported operand type(s) for -: 'float' and 'NoneType'\")"
+  }
+ }
+}

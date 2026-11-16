@@ -13,13 +13,13 @@ import subprocess
 
 import modal
 
-from aio.common import GPU, HF_HOME, MODEL_ID, gpu_image, hf_cache
+from aio.common import GPU, VOLUMES, commit_volumes, HF_HOME, MODEL_ID, gpu_image, hf_cache
 from aio.s1_baseline import MODEL_SHA
 
 app = modal.App("aio-m1-engine")
 
 
-@app.function(image=gpu_image, gpu=GPU, volumes={HF_HOME: hf_cache}, timeout=3600)
+@app.function(image=gpu_image, gpu=GPU, volumes=VOLUMES, timeout=3600)
 def run_engine(ref: dict, modes: list[str]) -> dict:
     from huggingface_hub import snapshot_download
 
@@ -48,6 +48,7 @@ def run_engine(ref: dict, modes: list[str]) -> dict:
             proc.terminate()
             proc.wait(timeout=60)
         print(open(f"/tmp/engine_{mode}.log").read()[-1500:], flush=True)
+    commit_volumes()
     return {"engine": "aio-gemma4-m1", "gpu": GPU, "results": results}
 
 

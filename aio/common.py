@@ -15,7 +15,26 @@ VLLM_VERSION = "0.33.0"
 HF_HOME = "/hf"
 hf_cache = modal.Volume.from_name("aio-hf-cache", create_if_missing=True)
 
-_env = {"HF_HOME": HF_HOME, "HF_XET_HIGH_PERFORMANCE": "1"}
+# Second volume: compiled GPU code, so it is built once and reused by every later run.
+#   vLLM torch.compile graphs, TorchInductor kernels, Triton kernels, FlashInfer JIT kernels.
+CACHE_DIR = "/compile-cache"
+compile_cache = modal.Volume.from_name("aio-compile-cache", create_if_missing=True)
+VOLUMES = {HF_HOME: hf_cache, CACHE_DIR: compile_cache}
+
+_env = {
+    "HF_HOME": HF_HOME,
+    "HF_XET_HIGH_PERFORMANCE": "1",
+    "VLLM_CACHE_ROOT": f"{CACHE_DIR}/vllm",
+    "TORCHINDUCTOR_CACHE_DIR": f"{CACHE_DIR}/inductor",
+    "TRITON_CACHE_DIR": f"{CACHE_DIR}/triton",
+    "FLASHINFER_WORKSPACE_BASE": f"{CACHE_DIR}/flashinfer",
+}
+
+
+def commit_volumes():
+    """Persist new cache files now (Modal also commits when the container exits)."""
+    hf_cache.commit()
+    compile_cache.commit()
 
 # Light image: only for reading model metadata on CPU.
 cpu_image = (

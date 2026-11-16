@@ -183,3 +183,15 @@ Kernel targets come from Stage 0:
   one launch instead of ~1,000 separate kernel launches.
 - `aio/engine/server.py` is an OpenAI-compatible `/v1/completions` endpoint, so the same
   load generator and the same oracle check run against both engines.
+
+### 11. Caching, so we stop paying for the same work twice
+| What | Where it is kept | Saves per run |
+|---|---|---|
+| Container image (CUDA devel + vLLM, ~7 GB) | Modal's image cache (automatic) | minutes |
+| Model weights (10 GB) | volume `aio-hf-cache` (`HF_HOME`) | ~1 min download |
+| vLLM torch.compile graphs | volume `aio-compile-cache` (`VLLM_CACHE_ROOT`) | ~1–2 min of startup |
+| TorchInductor and Triton kernels | `aio-compile-cache` (`TORCHINDUCTOR_CACHE_DIR`, `TRITON_CACHE_DIR`) | seconds to minutes |
+| FlashInfer JIT kernels (the `nvcc` builds) | `aio-compile-cache` (`FLASHINFER_WORKSPACE_BASE`) | ~30 s+ |
+
+The environment variable names were verified in the source code: `flashinfer/jit/env.py` and `vllm/envs.py`.
+The new env layer sits on top of the cached pip layer, so adding it only rebuilds a tiny layer.
