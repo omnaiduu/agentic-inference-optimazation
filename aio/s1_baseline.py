@@ -36,7 +36,7 @@ CHECK_PROMPTS = [
     "Write a haiku about inference engines.",
     _long + "\n\nHow many red balls are in box number 5? And in box number 100?",
 ]
-CHECK_MAX_TOKENS = 64
+from aio.harness import CHECK_MAX_TOKENS  # noqa: E402
 
 # vLLM launch configurations we compare. Each is the extra CLI flags.
 COMMON = ["--max-model-len", "4096", "--gpu-memory-utilization", "0.90",
@@ -72,49 +72,12 @@ def reference() -> dict:
             "torch": str(torch.__version__), "gpu": GPU, "cases": out}
 
 
-def _wait_ready(url: str, proc: subprocess.Popen, timeout_s: int = 1200):
-    import urllib.request
-    t0 = time.time()
-    while time.time() - t0 < timeout_s:
-        if proc.poll() is not None:
-            raise RuntimeError(f"server exited with code {proc.returncode}")
-        try:
-            urllib.request.urlopen(f"{url}/health", timeout=2)
-            return time.time() - t0
-        except Exception:
-            time.sleep(2)
-    raise TimeoutError("server did not become ready")
-
-
-def check_correctness(url: str, ref: dict) -> dict:
-    """Greedy-decode the oracle prompts on the engine and compare text with the oracle."""
-    import urllib.request
-    rows = []
-    for case in ref["cases"]:
-        body = json.dumps({"model": MODEL_ID, "prompt": case["prompt_ids"], "max_tokens": CHECK_MAX_TOKENS,
-                           "temperature": 0.0}).encode()
-        req = urllib.request.Request(f"{url}/v1/completions", body, {"Content-Type": "application/json"})
-        got = json.loads(urllib.request.urlopen(req, timeout=300).read())["choices"][0]["text"]
-        want = case["output_text"]
-        prefix = 0
-        while prefix < min(len(got), len(want)) and got[prefix] == want[prefix]:
-            prefix += 1
-        rows.append({"exact": got == want, "common_prefix_frac": prefix / max(len(want), 1),
-                     "got": got[:120], "want": want[:120]})
-    n_exact = sum(r["exact"] for r in rows)
-    avg_prefix = sum(r["common_prefix_frac"] for r in rows) / len(rows)
-    print(f"  correctness: {n_exact}/{len(rows)} exact matches, avg common prefix {avg_prefix:.0%}")
-    for r in rows:
-        if not r["exact"]:
-            print(f"    DIFF after {r['common_prefix_frac']:.0%}:\n      got : {r['got']!r}\n      want: {r['want']!r}")
-    return {"exact": n_exact, "total": len(rows), "avg_common_prefix": avg_prefix, "rows": rows}
-
-
 @app.function(image=gpu_image, gpu=GPU, volumes={HF_HOME: hf_cache}, timeout=3600)
 def run_vllm(config: str, ref: dict) -> dict:
     import asyncio
 
     from aio import loadgen
+    from aio.harness import check_correctness, wait_ready
 
     args = ["vllm", "serve", MODEL_ID, "--revision", MODEL_SHA, "--port", "8000", *CONFIGS[config]]
     print("launching:", " ".join(args), flush=True)
@@ -122,10 +85,10 @@ def run_vllm(config: str, ref: dict) -> dict:
     proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT)
     url = "http://127.0.0.1:8000"
     try:
-        startup = _wait_ready(url, proc)
+        startup = wait_ready(url, proc)
         hf_cache.commit()
         print(f"  server ready in {startup:.0f}s", flush=True)
-        corr = check_correctness(url, ref)
+        corr = check_correctness(url, ref, MODEL_ID)
         bench = asyncio.run(loadgen.run_all(url, MODEL_ID))
     except Exception:
         print(open("/tmp/server.log").read()[-6000:])

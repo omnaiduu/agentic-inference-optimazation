@@ -143,3 +143,36 @@ Kernel targets come from Stage 0:
   - Consequence: the correctness gate must allow "close-call" divergences, not demand 100% exact
     text. Baseten made the same allowance (subtle numerical differences, with accuracy at least as
     good as BF16).
+
+### 9. vLLM baseline attempt 1 failed: a missing compiler
+- On the first sampling call, vLLM 0.33's FlashInfer sampler JIT-compiles a CUDA kernel.
+  That needs `nvcc`, which our slim pip-installed image doesn't have:
+  `RuntimeError: Could not find nvcc`.
+- Fix: use the **official image** `vllm/vllm-openai:v0.33.0` (CUDA 13.0.3, released 2026-11-02,
+  confirmed via the [release notes](https://github.com/vllm-project/vllm/releases/)).
+  We use the same image for our engine, so both sides run identical torch/CUDA.
+- **Lesson:** "stock vLLM" should mean the official image, not a pip install. Performance
+  libraries increasingly JIT-compile kernels at runtime and need a full CUDA toolkit.
+
+### 10. Milestone 1: our engine (E1 correct + E2 CUDA graphs)
+- `aio/engine/model.py` is ~250 lines of PyTorch. It was re-derived by reading
+  transformers 5.20.2 `modeling_gemma4.py`. These 9 details must match exactly; any one of them
+  wrong gives garbage text:
+  1. Embedding scale sqrt(1536), **cast to bf16 first** (39.19 becomes 39.25).
+  2. RMSNorm runs in fp32 and multiplies by `w`, not `1 + w`.
+  3. q_norm and k_norm are per-head RMSNorms; v_norm has **no weight**.
+  4. Attention scale = **1.0**, not 1/sqrt(d).
+  5. Sliding layers: head_dim 256, RoPE θ=1e4. Full layers: head_dim **512**, "proportional"
+     RoPE θ=1e6 that rotates only 25% of the dims.
+  6. Layers 15–34 compute no K/V. They read layer 13's KV (sliding layers) or layer 14's KV
+     (full layers).
+  7. PLE input = (RMSNorm(proj(embeds)/√1536) + table[tok]·16)/√2, injected after the MLP via
+     gate → GELU → ×PLE → proj → norm.
+  8. A learned `layer_scalar` multiplies each layer's output.
+  9. The lm_head is tied to the embedding table; logits are soft-capped to 30·tanh(x/30).
+- Static KV cache: only the 15 non-shared layers need one, and it has 1 KV head.
+  That's ~45 MB at 4K context, tiny compared with the 4.6 GB of weights.
+- E2: one CUDA graph per cache-length bucket (256, 512, …, 4096). The decode step replays as
+  one launch instead of ~1,000 separate kernel launches.
+- `aio/engine/server.py` is an OpenAI-compatible `/v1/completions` endpoint, so the same
+  load generator and the same oracle check run against both engines.

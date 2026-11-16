@@ -25,10 +25,12 @@ cpu_image = (
     .add_local_python_source("aio")
 )
 
-# GPU image: vLLM (which brings torch + transformers with Gemma 4 support).
+# GPU image: the OFFICIAL vLLM release image (torch, transformers, triton, and the CUDA
+# compiler nvcc, which vLLM's FlashInfer sampler JIT-compiles on first use).
+# The same image runs our own engine so both sides use identical torch/CUDA.
 gpu_image = (
-    modal.Image.debian_slim(python_version="3.12")
-    .uv_pip_install(f"vllm=={VLLM_VERSION}", "huggingface_hub[hf_xet]", "aiohttp")
+    modal.Image.from_registry(f"vllm/vllm-openai:v{VLLM_VERSION}")
+    .entrypoint([])
     .env(_env)
     .add_local_python_source("aio")
 )
