@@ -199,12 +199,14 @@ class Gemma4E2B:
 
         rope = {f: self.rope(positions, f) for f in (False, True)}
         prefill = T > 1
+        # Record the new positions in the ring FIRST, so the current token can attend to itself.
+        # (Building the mask before this update was a real bug: GSM8K fell from 74% to 17%.)
+        tail = positions[-self.window:]                    # positions that land in the ring
+        self.ring_pos.index_copy_(0, tail % self.window, tail)
         if prefill:
             masks = {f: self.attn_mask(positions, T, f) for f in (False, True)}
         else:
             masks = {True: self.attn_mask(positions, S, True), False: self.ring_mask(positions)}
-        tail = positions[-self.window:]                    # positions that land in the ring
-        self.ring_pos.index_copy_(0, tail % self.window, tail)
         fresh = {}                                         # prefill: full-prompt K/V per source layer
 
         for i in range(self.L):
