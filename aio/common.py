@@ -53,6 +53,7 @@ gpu_image = (
     modal.Image.from_registry("nvidia/cuda:13.0.3-devel-ubuntu24.04", add_python="3.12")
     .entrypoint([])
     .uv_pip_install(f"vllm=={VLLM_VERSION}", "huggingface_hub[hf_xet]", "aiohttp")
+    .uv_pip_install("pandas", "pyarrow")  # small extra layer (GSM8K parquet); keeps the vLLM layer cached
     .env(_env)
     .add_local_python_source("aio")
 )

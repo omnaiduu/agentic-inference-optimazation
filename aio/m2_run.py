@@ -27,7 +27,7 @@ QAT_SHA = "971342c08f607aa7779983f6b5289778b5d271a7"
 ALL = ["vllm-bf16", "vllm-qat", "ours-bf16", "ours-qat", "ours-qat-lm8", "ours-qat-lm4"]
 
 app = modal.App("aio-m2")
-image = gpu_image.uv_pip_install("pandas", "pyarrow")
+image = gpu_image
 
 
 @app.function(image=image, gpu=GPU, volumes=VOLUMES, timeout=3600)
