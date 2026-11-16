@@ -24,11 +24,14 @@ def main():
     ap.add_argument("--mode", choices=["eager", "graph", "compile"], default="graph")
     ap.add_argument("--port", type=int, default=8001)
     ap.add_argument("--max-len", type=int, default=4096)
+    ap.add_argument("--quant-dir", default=None, help="Google QAT int4 checkpoint dir")
+    ap.add_argument("--lm-head-bits", type=int, default=None, help="quantize lm_head to 4 or 8 bits")
     args = ap.parse_args()
 
     t0 = time.time()
     tok = AutoTokenizer.from_pretrained(args.model_dir)
-    model = Gemma4E2B(args.model_dir, max_len=args.max_len)
+    model = Gemma4E2B(args.model_dir, max_len=args.max_len, quant_dir=args.quant_dir,
+                      lm_head_bits=args.lm_head_bits)
     print(f"weights loaded in {time.time() - t0:.1f}s", flush=True)
     if args.mode == "compile":
         model.enable_compile()
@@ -92,11 +95,29 @@ def main():
         await resp.write_eof()
         return resp
 
+    def teacher_forced(prompt_ids, target_ids):
+        """Feed the ORACLE's tokens one at a time (decode path) and record what we would have
+        predicted at every step. Agreement = fraction of steps where we pick the oracle's token."""
+        with lock:
+            preds = [model.prefill(prompt_ids)]
+            pos = len(prompt_ids)
+            for t in target_ids[:-1]:
+                preds.append(decode(t, pos))
+                pos += 1
+            return preds
+
+    async def teacher_forced_route(request: web.Request):
+        body = await request.json()
+        loop = asyncio.get_running_loop()
+        preds = await loop.run_in_executor(None, teacher_forced, body["prompt_ids"], body["target_ids"])
+        return web.json_response({"preds": preds})
+
     async def health(_):
         return web.Response(text="ok")
 
     app = web.Application(client_max_size=64 * 1024 * 1024)
-    app.add_routes([web.post("/v1/completions", completions), web.get("/health", health)])
+    app.add_routes([web.post("/v1/completions", completions), web.get("/health", health),
+                    web.post("/aio/teacher_forced", teacher_forced_route)])
     print(f"serving on :{args.port} (mode={args.mode})", flush=True)
     web.run_app(app, port=args.port, print=None)
 

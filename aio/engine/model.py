@@ -28,6 +28,8 @@ import torch
 import torch.nn.functional as F
 from safetensors import safe_open
 
+from aio.engine.quant import QLinear, linear, quantize_rtn
+
 EOS_IDS = (1, 106)  # <eos>, <turn|> (from generation_config / config eos_token_id)
 
 
@@ -45,7 +47,10 @@ def rotate_half(x):
 
 
 class Gemma4E2B:
-    def __init__(self, model_dir: str, max_len: int = 4096, device: str = "cuda"):
+    def __init__(self, model_dir: str, max_len: int = 4096, device: str = "cuda",
+                 quant_dir: str | None = None, lm_head_bits: int | None = None):
+        """quant_dir: load Google's QAT int4 checkpoint (compressed-tensors) for all Linear layers.
+        lm_head_bits: additionally quantize the lm_head (which the QAT checkpoint keeps in bf16)."""
         self.device = device
         self.max_len = max_len
         cfg = json.load(open(f"{model_dir}/config.json"))["text_config"]
@@ -68,24 +73,40 @@ class Gemma4E2B:
 
         # ---- load weights (text decoder only; skip vision/audio towers) ----
         prefix = "model.language_model."
-        self.W: dict[str, torch.Tensor] = {}
-        for f in sorted(glob.glob(f"{model_dir}/*.safetensors")):
+        self.W: dict = {}
+        raw: dict[str, torch.Tensor] = {}
+        for f in sorted(glob.glob(f"{quant_dir or model_dir}/*.safetensors")):
             with safe_open(f, "pt", device="cpu") as sf:
                 for k in sf.keys():
-                    if k.startswith(prefix):
-                        self.W[k[len(prefix):]] = sf.get_tensor(k).to(device)
+                    if k.startswith(prefix) or k == "lm_head.weight":
+                        raw[k.removeprefix(prefix)] = sf.get_tensor(k).to(device)
+        for k, v in raw.items():
+            if k.endswith(".weight_packed"):       # int4 layer -> QLinear
+                base = k.removesuffix(".weight_packed")
+                n_out, k_in = raw[base + ".weight_shape"].tolist()
+                self.W[base + ".weight"] = QLinear(v, raw[base + ".weight_scale"], 4, k_in)
+            elif not k.endswith((".weight_scale", ".weight_shape")):
+                self.W[k] = v
+        del raw
         self.dtype = self.W["embed_tokens.weight"].dtype
+        lm = self.W.pop("lm_head.weight", None)
+        self.lm_head = lm if lm is not None else self.W["embed_tokens.weight"]  # tied
+        if lm_head_bits:
+            packed, scale = quantize_rtn(self.lm_head, lm_head_bits)
+            self.lm_head = QLinear(packed, scale, lm_head_bits, self.hidden)
         # Pre-transpose nothing: F.linear(x, W) computes x @ W.T just like nn.Linear.
         self.layer_w = [{k.split(f"layers.{i}.", 1)[1]: v for k, v in self.W.items()
                          if k.startswith(f"layers.{i}.")} for i in range(self.L)]
         # Fusion: one matmul instead of three (q,k,v) / two (gate,up). Fewer, bigger kernels.
         for i, w in enumerate(self.layer_w):
             if i < self.first_shared:
-                w["qkv"] = torch.cat([w.pop("self_attn.q_proj.weight"), w.pop("self_attn.k_proj.weight"),
-                                      w.pop("self_attn.v_proj.weight")])
+                parts = [w.pop("self_attn.q_proj.weight"), w.pop("self_attn.k_proj.weight"),
+                         w.pop("self_attn.v_proj.weight")]
+                w["qkv"] = QLinear.cat(parts) if isinstance(parts[0], QLinear) else torch.cat(parts)
             else:
                 w["qkv"] = w.pop("self_attn.q_proj.weight")
-            w["gate_up"] = torch.cat([w.pop("mlp.gate_proj.weight"), w.pop("mlp.up_proj.weight")])
+            parts = [w.pop("mlp.gate_proj.weight"), w.pop("mlp.up_proj.weight")]
+            w["gate_up"] = QLinear.cat(parts) if isinstance(parts[0], QLinear) else torch.cat(parts)
         for k in [k for k in self.W if k.startswith("layers.")]:
             del self.W[k]  # the per-layer dicts now own these tensors
         torch.cuda.empty_cache()
@@ -155,7 +176,7 @@ class Gemma4E2B:
         # Detail 7: per-layer inputs, computed once for all layers.
         ple_tok = (F.embedding(ids, W["embed_tokens_per_layer.weight"]) * self.ple_embed_scale
                    ).view(T, self.L, self.ple_dim)
-        ple_ctx = F.linear(x, W["per_layer_model_projection.weight"]) * (self.hidden ** -0.5)
+        ple_ctx = linear(x, W["per_layer_model_projection.weight"]) * (self.hidden ** -0.5)
         ple_ctx = rms_norm(ple_ctx.view(T, self.L, self.ple_dim), W["per_layer_projection_norm.weight"], eps)
         ple = (ple_ctx + ple_tok) * (2.0 ** -0.5)                                     # [T, 35, 256]
 
@@ -168,7 +189,7 @@ class Gemma4E2B:
 
             # --- attention block ---
             h = rms_norm(x, w["input_layernorm.weight"], eps)
-            qkv = F.linear(h, w["qkv"])
+            qkv = linear(h, w["qkv"])
             q = qkv[:, :self.n_heads * hd].view(T, self.n_heads, hd)
             q = rms_norm(q, w["self_attn.q_norm.weight"], eps)
             q = q * cos[:, None] + rotate_half(q) * sin[:, None]
@@ -186,25 +207,25 @@ class Gemma4E2B:
             scores = scores.masked_fill(~masks[full][None], float("-inf"))
             probs = torch.softmax(scores, dim=-1).to(self.dtype)
             a = torch.einsum("hts,sd->thd", probs, V).reshape(T, self.n_heads * hd)
-            a = F.linear(a, w["self_attn.o_proj.weight"])
+            a = linear(a, w["self_attn.o_proj.weight"])
             x = x + rms_norm(a, w["post_attention_layernorm.weight"], eps)
 
             # --- MLP block (GELU-tanh gated) ---
             h = rms_norm(x, w["pre_feedforward_layernorm.weight"], eps)
-            gate, up = F.linear(h, w["gate_up"]).chunk(2, dim=-1)
-            h = F.linear(F.gelu(gate, approximate="tanh") * up, w["mlp.down_proj.weight"])
+            gate, up = linear(h, w["gate_up"]).chunk(2, dim=-1)
+            h = linear(F.gelu(gate, approximate="tanh") * up, w["mlp.down_proj.weight"])
             x = x + rms_norm(h, w["post_feedforward_layernorm.weight"], eps)
 
             # --- per-layer embedding injection ---
-            g = F.gelu(F.linear(x, w["per_layer_input_gate.weight"]), approximate="tanh") * ple[:, i]
-            g = F.linear(g, w["per_layer_projection.weight"])
+            g = F.gelu(linear(x, w["per_layer_input_gate.weight"]), approximate="tanh") * ple[:, i]
+            g = linear(g, w["per_layer_projection.weight"])
             x = x + rms_norm(g, w["post_per_layer_input_norm.weight"], eps)
 
             x = x * w["layer_scalar"]
 
         # --- final norm + tied lm_head + soft-cap, only for the last position ---
         h = rms_norm(x[-1:], W["norm.weight"], eps)
-        logits = F.linear(h, W["embed_tokens.weight"])
+        logits = linear(h, self.lm_head)
         logits = torch.tanh(logits / self.softcap) * self.softcap
         return torch.argmax(logits, dim=-1)
 
