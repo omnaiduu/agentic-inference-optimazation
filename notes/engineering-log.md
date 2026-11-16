@@ -333,3 +333,25 @@ Takeaways:
     refactor, while vLLM-bf16 was stable (128.5 → 128.4).
 - First-time startup was 10–15 min (Triton autotuning of 54 configs × every layer shape, plus
   Inductor compilation). It's cached in the `aio-compile-cache` volume now.
+
+### 19. What it's worth in production (L40S at $1.95/h, single-stream serving)
+| Engine | tok/s (1 user) | tokens per GPU-hour | $ per 1M output tokens |
+|---|---|---|---|
+| vLLM bf16 | 128 | 461k | $4.23 |
+| vLLM QAT int4 | 211 | 760k | $2.57 |
+| ours, int4 + int4 lm_head | 327 | 1.18M | **$1.66** |
+
+- Example: 1B latency-sensitive output tokens per day. That's ~$4,230/day on vLLM bf16 vs ~$1,660/day on
+  ours, a saving of ~$940k/year for one model.
+- An agent doing 50 sequential steps × 300 tokens waits ~117 s on vLLM bf16 vs ~46 s on ours.
+- **Honest caveat:** for batched bulk serving, vLLM QAT does 3,757 tok/s at 32 users (~$0.14/M).
+  Our engine serves one request at a time, so it only wins in the latency regime until it has batching.
+
+### 20. Ideas confirmed via Exa for the next speed round
+- **Split-K GEMV for skinny shapes** (down_proj, o_proj): 1.2–3.5x reported in
+  [arXiv 2402.00025](https://arxiv.org/abs/2402.00025) and a
+  [W4A16 Triton write-up](https://subhadipmitra.com/blog/2026/w4a16-weight-only-gemm-triton/).
+- **Bound sliding-window attention to its window.** vLLM fixed the same waste in one backend in
+  [PR #49588](https://github.com/vllm-project/vllm/pull/49588). Our decode attends over a whole
+  power-of-two bucket even for the 28 window-512 layers.
+- **Load-once int4 unpack:** our kernel already does this.
