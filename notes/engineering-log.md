@@ -101,3 +101,13 @@ Observations worth a blog paragraph:
 - *Hiccup:* the first oracle run crashed. `device_map="cuda"` in `from_pretrained` needs the
   `accelerate` package, which we hadn't installed. Fixed with a plain `.to("cuda")`.
   Cost: ~1 minute of container time.
+- *Exa check of the oracle setup:*
+  - `AutoModelForCausalLM` is a documented way to load Gemma 4 for text
+    ([HF Gemma 4 docs](https://huggingface.co/docs/transformers/main/model_doc/gemma4)).
+  - The official model card installs `accelerate` for `device_map`
+    ([model card](https://huggingface.co/google/gemma-4-E2B-it)), which confirms our crash diagnosis.
+  - Pitfall: the chat template has an `enable_thinking` switch, so two engines could format the
+    same prompt differently. We avoid this by templating **once** in the oracle and sending the
+    exact `prompt_ids` to every engine.
+- **Status: still baseline.** Nothing has been optimized yet. Stage 1 only defines "correct"
+  (the oracle) and "normal speed" (stock vLLM).
