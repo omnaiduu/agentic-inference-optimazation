@@ -1,0 +1,1611 @@
+{
+ "sha": "4adf15748de9e1a0097b6274cee9c15836c41c37",
+ "config": {
+  "architectures": [
+   "Gemma4ForConditionalGeneration"
+  ],
+  "audio_config": {
+   "_name_or_path": "",
+   "architectures": null,
+   "attention_chunk_size": 12,
+   "attention_context_left": 13,
+   "attention_context_right": 0,
+   "attention_invalid_logits_value": -1000000000.0,
+   "attention_logit_cap": 50.0,
+   "chunk_size_feed_forward": 0,
+   "conv_kernel_size": 5,
+   "dtype": "bfloat16",
+   "gradient_clipping": 10000000000.0,
+   "hidden_act": "silu",
+   "hidden_size": 1024,
+   "id2label": {
+    "0": "LABEL_0",
+    "1": "LABEL_1"
+   },
+   "initializer_range": 0.02,
+   "is_encoder_decoder": false,
+   "label2id": {
+    "LABEL_0": 0,
+    "LABEL_1": 1
+   },
+   "model_type": "gemma4_audio",
+   "num_attention_heads": 8,
+   "num_hidden_layers": 12,
+   "output_attentions": false,
+   "output_hidden_states": false,
+   "output_proj_dims": 1536,
+   "problem_type": null,
+   "residual_weight": 0.5,
+   "return_dict": true,
+   "rms_norm_eps": 1e-06,
+   "subsampling_conv_channels": [
+    128,
+    32
+   ],
+   "use_clipped_linears": true
+  },
+  "audio_token_id": 258881,
+  "boa_token_id": 256000,
+  "boi_token_id": 255999,
+  "dtype": "bfloat16",
+  "eoa_token_id": 258883,
+  "eoa_token_index": 258883,
+  "eoi_token_id": 258882,
+  "eos_token_id": [
+   1,
+   106
+  ],
+  "image_token_id": 258880,
+  "initializer_range": 0.02,
+  "model_type": "gemma4",
+  "text_config": {
+   "attention_bias": false,
+   "attention_dropout": 0.0,
+   "attention_k_eq_v": false,
+   "bos_token_id": 2,
+   "dtype": "bfloat16",
+   "enable_moe_block": false,
+   "eos_token_id": 1,
+   "expert_intermediate_size": null,
+   "final_logit_softcapping": 30.0,
+   "global_head_dim": 512,
+   "head_dim": 256,
+   "hidden_activation": "gelu_pytorch_tanh",
+   "hidden_size": 1536,
+   "hidden_size_per_layer_input": 256,
+   "initializer_range": 0.02,
+   "intermediate_size": 6144,
+   "layer_types": [
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "full_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "full_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "full_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "full_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "full_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "full_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "full_attention"
+   ],
+   "max_position_embeddings": 131072,
+   "model_type": "gemma4_text",
+   "num_attention_heads": 8,
+   "num_experts": null,
+   "num_global_key_value_heads": null,
+   "num_hidden_layers": 35,
+   "num_key_value_heads": 1,
+   "num_kv_shared_layers": 20,
+   "pad_token_id": 0,
+   "rms_norm_eps": 1e-06,
+   "rope_parameters": {
+    "full_attention": {
+     "partial_rotary_factor": 0.25,
+     "rope_theta": 1000000.0,
+     "rope_type": "proportional"
+    },
+    "sliding_attention": {
+     "rope_theta": 10000.0,
+     "rope_type": "default"
+    }
+   },
+   "sliding_window": 512,
+   "tie_word_embeddings": true,
+   "top_k_experts": null,
+   "use_bidirectional_attention": null,
+   "use_cache": true,
+   "use_double_wide_mlp": true,
+   "vocab_size": 262144,
+   "vocab_size_per_layer_input": 262144
+  },
+  "tie_word_embeddings": true,
+  "transformers_version": "5.5.0.dev0",
+  "video_token_id": 258884,
+  "vision_config": {
+   "_name_or_path": "",
+   "architectures": null,
+   "attention_bias": false,
+   "attention_dropout": 0.0,
+   "chunk_size_feed_forward": 0,
+   "default_output_length": 280,
+   "dtype": "bfloat16",
+   "global_head_dim": 64,
+   "head_dim": 64,
+   "hidden_activation": "gelu_pytorch_tanh",
+   "hidden_size": 768,
+   "id2label": {
+    "0": "LABEL_0",
+    "1": "LABEL_1"
+   },
+   "initializer_range": 0.02,
+   "intermediate_size": 3072,
+   "is_encoder_decoder": false,
+   "label2id": {
+    "LABEL_0": 0,
+    "LABEL_1": 1
+   },
+   "max_position_embeddings": 131072,
+   "model_type": "gemma4_vision",
+   "num_attention_heads": 12,
+   "num_hidden_layers": 16,
+   "num_key_value_heads": 12,
+   "output_attentions": false,
+   "output_hidden_states": false,
+   "patch_size": 16,
+   "pooling_kernel_size": 3,
+   "position_embedding_size": 10240,
+   "problem_type": null,
+   "return_dict": true,
+   "rms_norm_eps": 1e-06,
+   "rope_parameters": {
+    "rope_theta": 100.0,
+    "rope_type": "default"
+   },
+   "standardize": false,
+   "use_clipped_linears": true
+  },
+  "vision_soft_tokens_per_image": 280
+ },
+ "speed_of_light": {
+  "bytes_per_token_gb": 4.5972793020000005,
+  "breakdown_gb": {
+   "decoder layers (attn+mlp+PLE proj)": 3.76444423,
+   "lm_head (tied embed_tokens, full read)": 0.805306368,
+   "other small (norms, per_layer_model_projection)": 0.027528704,
+   "SKIPPED: embed_tokens_per_layer (row lookup)": 0.0,
+   "SKIPPED: vision+audio towers (text only)": 0.0,
+   "(for reference) PLE table size on disk": 4.69762048,
+   "(for reference) vision+audio on disk": 0.951458176
+  },
+  "max_tok_s": {
+   "T4": 69.60638651229809,
+   "L4": 65.25598735527946,
+   "A10": 130.51197471055892,
+   "L40S": 187.93724358320483,
+   "A100-80GB": 443.5231940580494,
+   "H100": 728.6918588006206,
+   "H200": 1044.0957976844713,
+   "B200": 1740.1596628074522
+  }
+ },
+ "groups": {
+  "model.audio_tower.layers.N.feed_forward1.ffw_layer_1.input_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward1.ffw_layer_1.input_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward1.ffw_layer_1.linear": {
+   "count": 12,
+   "params": 50331648,
+   "bytes": 100663296,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.feed_forward1.ffw_layer_1.output_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward1.ffw_layer_1.output_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward1.ffw_layer_2.input_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward1.ffw_layer_2.input_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward1.ffw_layer_2.linear": {
+   "count": 12,
+   "params": 50331648,
+   "bytes": 100663296,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024,
+    4096
+   ]
+  },
+  "model.audio_tower.layers.N.feed_forward1.ffw_layer_2.output_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward1.ffw_layer_2.output_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward1.post_layer_norm": {
+   "count": 12,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.feed_forward1.pre_layer_norm": {
+   "count": 12,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.feed_forward2.ffw_layer_1.input_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward2.ffw_layer_1.input_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward2.ffw_layer_1.linear": {
+   "count": 12,
+   "params": 50331648,
+   "bytes": 100663296,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    4096,
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.feed_forward2.ffw_layer_1.output_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward2.ffw_layer_1.output_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward2.ffw_layer_2.input_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward2.ffw_layer_2.input_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward2.ffw_layer_2.linear": {
+   "count": 12,
+   "params": 50331648,
+   "bytes": 100663296,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024,
+    4096
+   ]
+  },
+  "model.audio_tower.layers.N.feed_forward2.ffw_layer_2.output_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward2.ffw_layer_2.output_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.feed_forward2.post_layer_norm": {
+   "count": 12,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.feed_forward2.pre_layer_norm": {
+   "count": 12,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.lconv1d.conv_norm": {
+   "count": 12,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.lconv1d.depthwise_conv1d": {
+   "count": 12,
+   "params": 61440,
+   "bytes": 122880,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024,
+    1,
+    5
+   ]
+  },
+  "model.audio_tower.layers.N.lconv1d.linear_end.input_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.lconv1d.linear_end.input_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.lconv1d.linear_end.linear": {
+   "count": 12,
+   "params": 12582912,
+   "bytes": 25165824,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024,
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.lconv1d.linear_end.output_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.lconv1d.linear_end.output_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.lconv1d.linear_start.input_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.lconv1d.linear_start.input_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.lconv1d.linear_start.linear": {
+   "count": 12,
+   "params": 25165824,
+   "bytes": 50331648,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    2048,
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.lconv1d.linear_start.output_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.lconv1d.linear_start.output_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.lconv1d.pre_layer_norm": {
+   "count": 12,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.norm_out": {
+   "count": 12,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.norm_post_attn": {
+   "count": 12,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.norm_pre_attn": {
+   "count": 12,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.self_attn.k_proj.input_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.k_proj.input_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.k_proj.linear": {
+   "count": 12,
+   "params": 12582912,
+   "bytes": 25165824,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024,
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.self_attn.k_proj.output_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.k_proj.output_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.per_dim_scale": {
+   "count": 12,
+   "params": 1536,
+   "bytes": 3072,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    128
+   ]
+  },
+  "model.audio_tower.layers.N.self_attn.post.input_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.post.input_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.post.linear": {
+   "count": 12,
+   "params": 12582912,
+   "bytes": 25165824,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024,
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.self_attn.post.output_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.post.output_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.q_proj.input_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.q_proj.input_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.q_proj.linear": {
+   "count": 12,
+   "params": 12582912,
+   "bytes": 25165824,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024,
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.self_attn.q_proj.output_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.q_proj.output_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.relative_k_proj": {
+   "count": 12,
+   "params": 12582912,
+   "bytes": 25165824,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024,
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.self_attn.v_proj.input_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.v_proj.input_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.v_proj.linear": {
+   "count": 12,
+   "params": 12582912,
+   "bytes": 25165824,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024,
+    1024
+   ]
+  },
+  "model.audio_tower.layers.N.self_attn.v_proj.output_max": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.layers.N.self_attn.v_proj.output_min": {
+   "count": 12,
+   "params": 12,
+   "bytes": 24,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.audio_tower.output_proj": {
+   "count": 2,
+   "params": 1574400,
+   "bytes": 3148800,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1536,
+    1024
+   ]
+  },
+  "model.audio_tower.subsample_conv_projection.input_proj_linear": {
+   "count": 1,
+   "params": 1048576,
+   "bytes": 2097152,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1024,
+    1024
+   ]
+  },
+  "model.audio_tower.subsample_conv_projection.layer0.conv": {
+   "count": 1,
+   "params": 1152,
+   "bytes": 2304,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    128,
+    1,
+    3,
+    3
+   ]
+  },
+  "model.audio_tower.subsample_conv_projection.layer0.norm": {
+   "count": 1,
+   "params": 128,
+   "bytes": 256,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    128
+   ]
+  },
+  "model.audio_tower.subsample_conv_projection.layer1.conv": {
+   "count": 1,
+   "params": 36864,
+   "bytes": 73728,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    32,
+    128,
+    3,
+    3
+   ]
+  },
+  "model.audio_tower.subsample_conv_projection.layer1.norm": {
+   "count": 1,
+   "params": 32,
+   "bytes": 64,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    32
+   ]
+  },
+  "model.embed_audio.embedding_projection": {
+   "count": 1,
+   "params": 2359296,
+   "bytes": 4718592,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "model.embed_vision.embedding_projection": {
+   "count": 1,
+   "params": 1179648,
+   "bytes": 2359296,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1536,
+    768
+   ]
+  },
+  "model.language_model.embed_tokens": {
+   "count": 1,
+   "params": 402653184,
+   "bytes": 805306368,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    262144,
+    1536
+   ]
+  },
+  "model.language_model.embed_tokens_per_layer": {
+   "count": 1,
+   "params": 2348810240,
+   "bytes": 4697620480,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    262144,
+    8960
+   ]
+  },
+  "model.language_model.layers.N.input_layernorm": {
+   "count": 35,
+   "params": 53760,
+   "bytes": 107520,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1536
+   ]
+  },
+  "model.language_model.layers.N.layer_scalar": {
+   "count": 35,
+   "params": 35,
+   "bytes": 70,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1
+   ]
+  },
+  "model.language_model.layers.N.mlp.down_proj": {
+   "count": 35,
+   "params": 519045120,
+   "bytes": 1038090240,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1536,
+    6144
+   ]
+  },
+  "model.language_model.layers.N.mlp.gate_proj": {
+   "count": 35,
+   "params": 519045120,
+   "bytes": 1038090240,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    6144,
+    1536
+   ]
+  },
+  "model.language_model.layers.N.mlp.up_proj": {
+   "count": 35,
+   "params": 519045120,
+   "bytes": 1038090240,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    6144,
+    1536
+   ]
+  },
+  "model.language_model.layers.N.per_layer_input_gate": {
+   "count": 35,
+   "params": 13762560,
+   "bytes": 27525120,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    256,
+    1536
+   ]
+  },
+  "model.language_model.layers.N.per_layer_projection": {
+   "count": 35,
+   "params": 13762560,
+   "bytes": 27525120,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1536,
+    256
+   ]
+  },
+  "model.language_model.layers.N.post_attention_layernorm": {
+   "count": 35,
+   "params": 53760,
+   "bytes": 107520,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1536
+   ]
+  },
+  "model.language_model.layers.N.post_feedforward_layernorm": {
+   "count": 35,
+   "params": 53760,
+   "bytes": 107520,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1536
+   ]
+  },
+  "model.language_model.layers.N.post_per_layer_input_norm": {
+   "count": 35,
+   "params": 53760,
+   "bytes": 107520,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1536
+   ]
+  },
+  "model.language_model.layers.N.pre_feedforward_layernorm": {
+   "count": 35,
+   "params": 53760,
+   "bytes": 107520,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1536
+   ]
+  },
+  "model.language_model.layers.N.self_attn.k_norm": {
+   "count": 35,
+   "params": 10752,
+   "bytes": 21504,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    512
+   ]
+  },
+  "model.language_model.layers.N.self_attn.k_proj": {
+   "count": 35,
+   "params": 16515072,
+   "bytes": 33030144,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    512,
+    1536
+   ]
+  },
+  "model.language_model.layers.N.self_attn.o_proj": {
+   "count": 35,
+   "params": 132120576,
+   "bytes": 264241152,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1536,
+    4096
+   ]
+  },
+  "model.language_model.layers.N.self_attn.q_norm": {
+   "count": 35,
+   "params": 10752,
+   "bytes": 21504,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    512
+   ]
+  },
+  "model.language_model.layers.N.self_attn.q_proj": {
+   "count": 35,
+   "params": 132120576,
+   "bytes": 264241152,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    4096,
+    1536
+   ]
+  },
+  "model.language_model.layers.N.self_attn.v_proj": {
+   "count": 35,
+   "params": 16515072,
+   "bytes": 33030144,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    512,
+    1536
+   ]
+  },
+  "model.language_model.norm": {
+   "count": 1,
+   "params": 1536,
+   "bytes": 3072,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    1536
+   ]
+  },
+  "model.language_model.per_layer_model_projection": {
+   "count": 1,
+   "params": 13762560,
+   "bytes": 27525120,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "model.language_model.per_layer_projection_norm": {
+   "count": 1,
+   "params": 256,
+   "bytes": 512,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    256
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.input_layernorm": {
+   "count": 16,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    768
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.mlp.down_proj.input_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.mlp.down_proj.input_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.mlp.down_proj.linear": {
+   "count": 16,
+   "params": 37748736,
+   "bytes": 75497472,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    768,
+    3072
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.mlp.down_proj.output_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.mlp.down_proj.output_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.mlp.gate_proj.input_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.mlp.gate_proj.input_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.mlp.gate_proj.linear": {
+   "count": 16,
+   "params": 37748736,
+   "bytes": 75497472,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    3072,
+    768
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.mlp.gate_proj.output_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.mlp.gate_proj.output_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.mlp.up_proj.input_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.mlp.up_proj.input_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.mlp.up_proj.linear": {
+   "count": 16,
+   "params": 37748736,
+   "bytes": 75497472,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    3072,
+    768
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.mlp.up_proj.output_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.mlp.up_proj.output_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.post_attention_layernorm": {
+   "count": 16,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    768
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.post_feedforward_layernorm": {
+   "count": 16,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    768
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.pre_feedforward_layernorm": {
+   "count": 16,
+   "params": 12288,
+   "bytes": 24576,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    768
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.k_norm": {
+   "count": 16,
+   "params": 1024,
+   "bytes": 2048,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    64
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.k_proj.input_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.k_proj.input_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.k_proj.linear": {
+   "count": 16,
+   "params": 9437184,
+   "bytes": 18874368,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    768,
+    768
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.k_proj.output_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.k_proj.output_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.o_proj.input_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.o_proj.input_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.o_proj.linear": {
+   "count": 16,
+   "params": 9437184,
+   "bytes": 18874368,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    768,
+    768
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.o_proj.output_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.o_proj.output_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.q_norm": {
+   "count": 16,
+   "params": 1024,
+   "bytes": 2048,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    64
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.q_proj.input_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.q_proj.input_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.q_proj.linear": {
+   "count": 16,
+   "params": 9437184,
+   "bytes": 18874368,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    768,
+    768
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.q_proj.output_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.q_proj.output_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.v_proj.input_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.v_proj.input_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.v_proj.linear": {
+   "count": 16,
+   "params": 9437184,
+   "bytes": 18874368,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    768,
+    768
+   ]
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.v_proj.output_max": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.encoder.layers.N.self_attn.v_proj.output_min": {
+   "count": 16,
+   "params": 16,
+   "bytes": 32,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": []
+  },
+  "model.vision_tower.patch_embedder.input_proj": {
+   "count": 1,
+   "params": 589824,
+   "bytes": 1179648,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    768,
+    768
+   ]
+  },
+  "model.vision_tower.patch_embedder.position_embedding_table": {
+   "count": 1,
+   "params": 15728640,
+   "bytes": 31457280,
+   "dtype": [
+    "BF16"
+   ],
+   "shape": [
+    2,
+    10240,
+    768
+   ]
+  }
+ }
+}
