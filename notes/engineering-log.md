@@ -658,7 +658,15 @@ Estimated int4 time per step: 32 users 3.9 → ~2.7 ms, 8 users 3.2 → ~2.5 ms,
 Our checkpoint packs 8 values per int32 along K as `[N, K/8]` with a +8 offset; that is GPTQ's
 `[K/8, N]` layout transposed, Marlin's `uint4b8` type. Scales `[N, K/32]` → `[K/32, N]` →
 `marlin_permute_scales`. All 141 matrices match the bf16 dequantized reference to 0.0037 max relative
-error (bf16 rounding level). Compile + CUDA-graph + accuracy run: in progress.
+error (bf16 rounding level).
+
+Real-model result (`results/m3e_check_L40S.json`): accuracy fine (oracle agreement 91.5%, 97.8% of
+tokens identical to the verified path), but the **32-user decode step only went 5.23 → 4.96 ms
+(−5%)**, not the ~−23% the microbenchmark predicted. Likely reason: in the microbenchmark our kernel
+paid for a separate split-K sum kernel per call; in the compiled engine Inductor fuses that sum into
+the next op, so our kernel was never as slow in reality as on the bench. Lesson: a kernel
+microbenchmark must include the surrounding fusion, or check the gain in the real step before
+believing it.
 
 ## Handoff: where to resume (end of day 2, 2026-11-17)
 
@@ -668,8 +676,8 @@ State of the code (branch `claude/compassionate-tesla-vrojki`):
 - New, not yet benchmarked end to end: `ours-batch-fp8-marlin` (`server_batch --fp8-prefill --marlin`).
   Dispatch lives in `aio/engine/quant.py::linear`. Every int4 matrix is covered by Marlin or bf16.
   Conversion verified (141 matrices, max rel. error 0.0034). The real-model check
-  (`modal run -m aio.m3b_check --marlin`) was the last run of the day; its output is in
-  `results/m3e_check_L40S.json` if it finished.
+  (`modal run -m aio.m3b_check --marlin`) passed: accuracy unchanged, 32-user decode step
+  5.23 → 4.96 ms (−5% only, see milestone 3e).
 - Experimental knobs in our Triton kernel, off by default: `quant.DQ` (1 = magic-number dequant,
   +3%), `quant.LS` (tl.range pipelining, ~0%). Both must be passed explicitly to the kernel:
   torch.compile's Triton wrapper drops defaulted constexpr arguments (this crashed the compiled
@@ -679,8 +687,10 @@ Commands for the next session:
 - Full race with Marlin (~$1, 20–30 min): `modal run -m aio.m2_run --configs ours-batch-fp8-marlin --tag _b5`
 - Kernel microbenchmarks (~$0.15–0.25 each): `modal run -m aio.m3e_bench --m 32` (`--quick` for fewer variants)
 
-Expected from the kernel numbers (not yet measured end to end): ~1.8x / ~1.4x / ~1.15x vLLM at
-1 / 8 / 32 users.
+Measured in the real compiled step: 32-user decode 5.23 → 4.96 ms (−5%). So expect only a few
+percent end to end with `--marlin` (the earlier ~1.15x-at-32-users estimate came from the
+microbenchmark and was too optimistic). Before spending $1 on the full race, profile the compiled
+decode step with and without `--marlin` (m3b_profile style) to see where the int4 time really goes.
 
 Next levers, in order of value per dollar:
 1. The mixed (prompt-chunk) step: 13 ms each, ~40% of busy time at 32 users. Ideas: fuse the small

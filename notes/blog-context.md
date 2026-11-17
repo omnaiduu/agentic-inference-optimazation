@@ -103,7 +103,9 @@ on a B200, with ~1 week and ~$1,000s of compute
    So we kept our kernel only where it wins (1-user o/down matrices) and use Marlin elsewhere, and
    plain bf16 for the tiny PLE matrices. The honest framing: we don't win by out-writing Marlin; we
    win by scheduling, graphs and a narrow engine, and we use the best kernel for each matrix.
-   (Result of the full benchmark: pending.)
+   Twist: in the real compiled engine the gain was only 5% (decode step 5.23 → 4.96 ms), not the
+   23% the microbenchmark promised, because the compiler had been hiding part of our kernel's cost
+   all along (it fuses the split-K sum into the next operation; the benchmark did not).
 
 ## Quotable lessons
 - **Decode is a memory problem, not a maths problem.** At batch 1 the L40S needs 5.3 ms to read
@@ -115,6 +117,8 @@ on a B200, with ~1 week and ~$1,000s of compute
 - **Benchmarks lie in small ways.** Microbenchmarks showed more than 864 GB/s because the test
   matrix stayed in the 96 MB L2 cache. It happened twice: on day 2 evening bf16 "beat" int4 at
   2.2 TB/s until each timed call got its own copy of the weights.
+- **A kernel benchmark is not the engine.** Marlin was 23% faster in isolation and 5% faster in
+  the compiled step: measure the real step before celebrating.
 - **Know when to stop writing your own kernel.** Four well-researched Triton tricks: 8%. Marlin's
   offline layout + async copies: 23% more. Pick the best kernel per matrix and move on.
 - **Profile before you build.** We were about to write an attention kernel; the profile said the
