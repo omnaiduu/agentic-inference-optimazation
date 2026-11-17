@@ -75,8 +75,8 @@ def bench(M: int = 32, quick: bool = False) -> dict:
     import triton
     pipe_kernel = triton.autotune(       # same kernel, loop pipelined with tl.range(num_stages=LS)
         prune_configs_by={"early_config_prune": quant._prune},
-        configs=[triton.Config({"BLOCK_N": bn, "BLOCK_K": bk, "LS": ls}, num_warps=nw)
-                 for bn in (32, 64) for bk in (64, 128, 256) for nw in (4, 8) for ls in (2, 3, 4)],
+        configs=[triton.Config({"BLOCK_N": bn, "BLOCK_K": bk}, num_warps=nw)
+                 for bn in (32, 64) for bk in (64, 128, 256) for nw in (4, 8)],
         key=["M", "N", "K", "KS", "BITS", "DQ"],
     )(quant._gemm_kernel.fn)
     plain_kernel = quant._gemm_kernel
@@ -96,12 +96,14 @@ def bench(M: int = 32, quick: bool = False) -> dict:
         for vname, dq in variants.items():
             quant.DQ = dq
             quant._gemm_kernel = pipe_kernel if vname == "pipe" else plain_kernel
+            quant.LS = 3 if vname == "pipe" else 0
             f = quant.gemv if M == 1 else quant.gemm_small_m      # M = 1 runs our GEMV kernel in production
             y = f(x, ql).float()
             err = ((y - ref).abs().max() / ref.abs().max()).item()
             t = timeit(rot(lambda q: f(x, q), copies))
             row[vname] = {"us": t, "GBs": nbytes / t / 1e3, "rel_err": err}
         quant._gemm_kernel = plain_kernel
+        quant.LS = 0
         if "pipe" in row:
             row["pipe"]["cfg"] = str(pipe_kernel.best_config)
         quant.DQ = 1

@@ -51,6 +51,9 @@ def check(ref: dict, marlin: bool = False) -> dict:
                     yref = torch.nn.functional.linear(x.float(), w.dense.float())
                     err = ((quant.linear_marlin(x, w).float() - yref).abs().max() / yref.abs().max()).item()
                     worst, n_mar = max(worst, err), n_mar + 1
+        other = {(w.N, w.K) for d in [m.W, *m.layer_w] for w in d.values() if isinstance(w, quant.QLinear)
+                 and getattr(w, "mq", None) is None and not getattr(w, "small_dense", False)}
+        print(f"===== int4 matrices on neither Marlin nor bf16 (N, K): {sorted(other)}", flush=True)
         print(f"===== marlin conversion: {n_mar} matrices, worst max-error / max-value {worst:.4f}", flush=True)
         out["marlin_conv_err"] = worst
     m.enable_compile()

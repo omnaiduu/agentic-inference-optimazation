@@ -257,8 +257,8 @@ def _w4_tile(acc, k0, x_ptr, wp_ptr, s_ptr, rm, rn, mmask, nmask, K, KW, KG, shi
 )
 @triton.jit
 def _gemm_kernel(x_ptr, wp_ptr, s_ptr, y_ptr, M, N, K, KS,
-                 BITS: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
-                 DQ: tl.constexpr = 0, LS: tl.constexpr = 0):
+                 BITS: tl.constexpr, BLOCK_M: tl.constexpr, DQ: tl.constexpr, LS: tl.constexpr,
+                 BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr):
     PER: tl.constexpr = 32 // BITS
     MASK: tl.constexpr = (1 << BITS) - 1
     OFF: tl.constexpr = 1 << (BITS - 1)
@@ -287,6 +287,8 @@ def _gemm_kernel(x_ptr, wp_ptr, s_ptr, y_ptr, M, N, K, KS,
 
 
 DQ = 0   # dequantization method of the small-M kernel (see _gemm_kernel; aio/m3e_bench.py measures them)
+LS = 0   # 0: plain loop; >0: tl.range(num_stages=LS). Passed explicitly: torch.compile's Triton wrapper
+         # drops defaulted constexpr arguments (crashed the compiled engine in m3b_check --marlin)
 
 
 def gemm_small_m(x: torch.Tensor, w: QLinear, split: int | None = None) -> torch.Tensor:
@@ -297,5 +299,5 @@ def gemm_small_m(x: torch.Tensor, w: QLinear, split: int | None = None) -> torch
     y = torch.empty((split, M, w.N), dtype=torch.float32, device=x.device)
     grid = lambda meta: (triton.cdiv(w.N, meta["BLOCK_N"]), split, triton.cdiv(M, block_m))
     _gemm_kernel[grid](x.contiguous(), w.packed, w.scale, y, M, w.N, w.K, w.K // split,
-                       BITS=w.bits, BLOCK_M=block_m, DQ=DQ)
+                       BITS=w.bits, BLOCK_M=block_m, DQ=DQ, LS=LS)
     return y.sum(0).to(torch.bfloat16)
