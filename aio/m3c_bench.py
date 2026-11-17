@@ -25,18 +25,31 @@ SHAPES = {
 }
 
 
-def timeit(fn, reps=50):
+def timeit(fn, reps=20):
+    """GPU time per call, measured by replaying a CUDA graph of `reps` calls. (Timing eager calls
+    one by one measures the CPU launch overhead instead: ~95 us flat in our first attempt.)"""
     import torch
-    for _ in range(5):
+    for _ in range(3):
+        fn()                                   # warm-up: autotuning / compilation happen here
+    torch.cuda.synchronize()
+    s = torch.cuda.Stream()
+    s.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(s):
         fn()
+    torch.cuda.current_stream().wait_stream(s)
+    g = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(g):
+        for _ in range(reps):
+            fn()
+    g.replay()
     torch.cuda.synchronize()
     st, en = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
     st.record()
-    for _ in range(reps):
-        fn()
+    for _ in range(5):
+        g.replay()
     en.record()
     torch.cuda.synchronize()
-    return st.elapsed_time(en) / reps * 1000  # us
+    return st.elapsed_time(en) / (5 * reps) * 1000  # us
 
 
 @app.function(image=gpu_image, gpu=GPU, volumes=VOLUMES, timeout=3600)
