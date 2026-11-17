@@ -178,6 +178,35 @@ def gemv(x: torch.Tensor, w: QLinear) -> torch.Tensor:
 # with all M input rows on tensor cores (tl.dot). The weight bytes are read once per step and
 # shared by every user in the batch - that is the whole point of batching.
 # ---------------------------------------------------------------------------------------------
+@triton.jit
+def _w4_tile(acc, k0, x_ptr, wp_ptr, s_ptr, rm, rn, mmask, nmask, K, KW, KG, shifts,
+             BITS: tl.constexpr, BLOCK_K: tl.constexpr, BLOCK_N: tl.constexpr, DQ: tl.constexpr):
+    """One BLOCK_K step of the small-M int4 GEMM: load packed weights, dequantize, tensor-core dot."""
+    PER: tl.constexpr = 32 // BITS
+    MASK: tl.constexpr = (1 << BITS) - 1
+    OFF: tl.constexpr = 1 << (BITS - 1)
+    G: tl.constexpr = 32
+    rw = k0 // PER + tl.arange(0, BLOCK_K // PER)
+    wp = tl.load(wp_ptr + rn[:, None] * KW + rw[None, :], mask=nmask[:, None], other=0)
+    q = (wp[:, :, None] >> shifts[None, None, :]) & MASK
+    rg = k0 // G + tl.arange(0, BLOCK_K // G)
+    s = tl.load(s_ptr + rn[:, None] * KG + rg[None, :], mask=nmask[:, None], other=0)
+    if DQ == 0:       # int -> fp32 convert (slow I2F), subtract the offset, scale in fp32
+        q = tl.reshape(q, (BLOCK_N, BLOCK_K // G, G)).to(tl.float32) - OFF
+        w = tl.reshape(q * s.to(tl.float32)[:, :, None], (BLOCK_N, BLOCK_K)).to(tl.bfloat16)
+    else:             # magic number: bits 0x4300|q ARE the bf16 number 128+q (ulp is 1 at 128)
+        f = (q | 0x4300).to(tl.int16).to(tl.bfloat16, bitcast=True)
+        f = tl.reshape(f, (BLOCK_N, BLOCK_K // G, G))
+        if DQ == 1:   # bf16: (128+q) - (128+OFF) is exact, then one bf16 multiply = same rounding as before
+            w = (f - (128 + OFF)) * s[:, :, None]
+        else:         # fp32 FMA, one cast
+            w = (f.to(tl.float32) - (128 + OFF)) * s.to(tl.float32)[:, :, None]
+        w = tl.reshape(w, (BLOCK_N, BLOCK_K)).to(tl.bfloat16)
+    rk = k0 + tl.arange(0, BLOCK_K)
+    x = tl.load(x_ptr + rm[:, None] * K + rk[None, :], mask=mmask[:, None], other=0)
+    return acc + tl.dot(x, tl.trans(w))                                        # [BLOCK_M, BLOCK_N]
+
+
 @triton.autotune(
     prune_configs_by={"early_config_prune": _prune},
     configs=[triton.Config({"BLOCK_N": bn, "BLOCK_K": bk}, num_warps=nw, num_stages=ns)
@@ -187,7 +216,7 @@ def gemv(x: torch.Tensor, w: QLinear) -> torch.Tensor:
 @triton.jit
 def _gemm_kernel(x_ptr, wp_ptr, s_ptr, y_ptr, M, N, K, KS,
                  BITS: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
-                 DQ: tl.constexpr = 0):
+                 DQ: tl.constexpr = 0, LS: tl.constexpr = 0):
     PER: tl.constexpr = 32 // BITS
     MASK: tl.constexpr = (1 << BITS) - 1
     OFF: tl.constexpr = 1 << (BITS - 1)
@@ -203,36 +232,25 @@ def _gemm_kernel(x_ptr, wp_ptr, s_ptr, y_ptr, M, N, K, KS,
     KG = K // G
     shifts = tl.arange(0, PER) * BITS
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-    for k0 in range(pid_k * KS, (pid_k + 1) * KS, BLOCK_K):
-        rw = k0 // PER + tl.arange(0, BLOCK_K // PER)
-        wp = tl.load(wp_ptr + rn[:, None] * KW + rw[None, :], mask=nmask[:, None], other=0)
-        q = (wp[:, :, None] >> shifts[None, None, :]) & MASK
-        rg = k0 // G + tl.arange(0, BLOCK_K // G)
-        s = tl.load(s_ptr + rn[:, None] * KG + rg[None, :], mask=nmask[:, None], other=0)
-        if DQ == 0:       # int -> fp32 convert (slow I2F), subtract the offset, scale in fp32
-            q = tl.reshape(q, (BLOCK_N, BLOCK_K // G, G)).to(tl.float32) - OFF
-            w = tl.reshape(q * s.to(tl.float32)[:, :, None], (BLOCK_N, BLOCK_K)).to(tl.bfloat16)
-        else:             # magic number: bits 0x4300|q ARE the bf16 number 128+q (ulp is 1 at 128)
-            f = (q | 0x4300).to(tl.int16).to(tl.bfloat16, bitcast=True)
-            f = tl.reshape(f, (BLOCK_N, BLOCK_K // G, G))
-            if DQ == 1:   # bf16: (128+q) - (128+OFF) is exact, then one bf16 multiply = same rounding as before
-                w = (f - (128 + OFF)) * s[:, :, None]
-            else:         # fp32 FMA, one cast
-                w = (f.to(tl.float32) - (128 + OFF)) * s.to(tl.float32)[:, :, None]
-            w = tl.reshape(w, (BLOCK_N, BLOCK_K)).to(tl.bfloat16)
-        rk = k0 + tl.arange(0, BLOCK_K)
-        x = tl.load(x_ptr + rm[:, None] * K + rk[None, :], mask=mmask[:, None], other=0)
-        acc += tl.dot(x, tl.trans(w))                                              # [BLOCK_M, BLOCK_N]
+    if LS == 0:   # kernel-level num_stages: Triton only pipelines loads that feed tl.dot directly
+        for k0 in range(pid_k * KS, (pid_k + 1) * KS, BLOCK_K):
+            acc = _w4_tile(acc, k0, x_ptr, wp_ptr, s_ptr, rm, rn, mmask, nmask, K, KW, KG, shifts,
+                           BITS, BLOCK_K, BLOCK_N, DQ)
+    else:         # tl.range(num_stages=LS) asks Triton to prefetch ALL loads LS-1 iterations ahead,
+        # including the packed weights that go through shifts/masks before the dot (triton PR #3092)
+        for k0 in tl.range(pid_k * KS, (pid_k + 1) * KS, BLOCK_K, num_stages=LS):
+            acc = _w4_tile(acc, k0, x_ptr, wp_ptr, s_ptr, rm, rn, mmask, nmask, K, KW, KG, shifts,
+                           BITS, BLOCK_K, BLOCK_N, DQ)
     tl.store(y_ptr + (pid_k * M + rm[:, None]) * N + rn[None, :], acc, mask=mmask[:, None] & nmask[None, :])
 
 
 DQ = 0   # dequantization method of the small-M kernel (see _gemm_kernel; aio/m3e_bench.py measures them)
 
 
-def gemm_small_m(x: torch.Tensor, w: QLinear) -> torch.Tensor:
+def gemm_small_m(x: torch.Tensor, w: QLinear, split: int | None = None) -> torch.Tensor:
     """y[M, N] = x[M, K] @ W^T for 2 <= M <= 64, reading the low-bit weights once for all rows."""
     M = x.shape[0]
-    split = split_for(w.N, w.K)
+    split = split or getattr(w, "split", None) or split_for(w.N, w.K)
     block_m = 16 if M <= 16 else (32 if M <= 32 else 64)
     y = torch.empty((split, M, w.N), dtype=torch.float32, device=x.device)
     grid = lambda meta: (triton.cdiv(w.N, meta["BLOCK_N"]), split, triton.cdiv(M, block_m))

@@ -51,7 +51,7 @@ def bench(M: int = 32) -> dict:
             r = marlin_quantize(w.t().contiguous(), scalar_types.uint4b8, 32)
             w_ref, q_w, s = r[0], r[1], r[2]
             ws = mu.marlin_make_workspace_new(w.device)
-            zp = mu.marlin_make_empty_g_idx(w.device)
+            zp = torch.empty(0, dtype=torch.int32, device=w.device)
 
             def run(x):
                 return mu.apply_gptq_marlin_linear(
@@ -71,8 +71,17 @@ def bench(M: int = 32) -> dict:
         it = itertools.cycle(objs)
         return lambda: fn(next(it))
 
-    variants = {"cur": 0, "magic": 1, "magic32": 2}
+    variants = {"cur": 0, "magic": 1, "magic32": 2, "pipe": 1}
+    import triton
+    pipe_kernel = triton.autotune(       # same kernel, loop pipelined with tl.range(num_stages=LS)
+        prune_configs_by={"early_config_prune": quant._prune},
+        configs=[triton.Config({"BLOCK_N": bn, "BLOCK_K": bk, "LS": ls}, num_warps=nw)
+                 for bn in (32, 64) for bk in (64, 128, 256) for nw in (4, 8) for ls in (2, 3, 4)],
+        key=["M", "N", "K", "KS", "BITS", "DQ"],
+    )(quant._gemm_kernel.fn)
+    plain_kernel = quant._gemm_kernel
     tot = {k: 0.0 for k in [*variants, "marlin", "bf16"]}
+    tot["best_split"] = 0.0
     tot_bytes = 0.0
     for name, (N, K, n_layers) in SHAPES.items():
         w = torch.randn(N, K, device=dev, dtype=bf) * 0.02
@@ -86,10 +95,22 @@ def bench(M: int = 32) -> dict:
         row = {"MB": nbytes / 1e6}
         for vname, dq in variants.items():
             quant.DQ = dq
+            quant._gemm_kernel = pipe_kernel if vname == "pipe" else plain_kernel
             y = quant.gemm_small_m(x, ql).float()
             err = ((y - ref).abs().max() / ref.abs().max()).item()
             t = timeit(rot(lambda q: quant.gemm_small_m(x, q), copies))
             row[vname] = {"us": t, "GBs": nbytes / t / 1e3, "rel_err": err}
+        quant._gemm_kernel = plain_kernel
+        row["pipe"]["cfg"] = str(pipe_kernel.best_config)
+        quant.DQ = 1
+        row["split"] = {}
+        for sp in (1, 2, 4, 8, 16):
+            if K % (sp * 128) or (K // sp) < 128:
+                continue
+            row["split"][sp] = timeit(rot(lambda q: quant.gemm_small_m(x, q, split=sp), copies))
+        print(f"{name:15s} magic by split: " + "  ".join(f"{k}: {v:6.1f}us" for k, v in row["split"].items()),
+              flush=True)
+        tot["best_split"] = tot.get("best_split", 0.0) + min(row["split"].values()) * n_layers
         quant.DQ = 0
         row["bf16"] = {"us": timeit(rot(lambda q: F.linear(x, q.dense), copies))}
         if marlin is not None:
@@ -105,7 +126,7 @@ def bench(M: int = 32) -> dict:
             except Exception as e:              # noqa: BLE001
                 print(f"marlin failed on {name}: {type(e).__name__}: {e}", flush=True)
         for k in tot:
-            if k in row:
+            if k in row and "us" in row[k]:
                 tot[k] += row[k]["us"] * n_layers
         out["shapes"][name] = row
         print(f"{name:15s} {nbytes / 1e6:6.1f} MB  " + "  ".join(
