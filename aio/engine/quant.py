@@ -182,11 +182,12 @@ def gemv(x: torch.Tensor, w: QLinear) -> torch.Tensor:
     prune_configs_by={"early_config_prune": _prune},
     configs=[triton.Config({"BLOCK_N": bn, "BLOCK_K": bk}, num_warps=nw, num_stages=ns)
              for bn in (16, 32, 64) for bk in (64, 128, 256) for nw in (2, 4) for ns in (2, 3)],
-    key=["M", "N", "K", "KS", "BITS"],
+    key=["M", "N", "K", "KS", "BITS", "DQ"],
 )
 @triton.jit
 def _gemm_kernel(x_ptr, wp_ptr, s_ptr, y_ptr, M, N, K, KS,
-                 BITS: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr):
+                 BITS: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+                 DQ: tl.constexpr = 0):
     PER: tl.constexpr = 32 // BITS
     MASK: tl.constexpr = (1 << BITS) - 1
     OFF: tl.constexpr = 1 << (BITS - 1)
@@ -206,14 +207,26 @@ def _gemm_kernel(x_ptr, wp_ptr, s_ptr, y_ptr, M, N, K, KS,
         rw = k0 // PER + tl.arange(0, BLOCK_K // PER)
         wp = tl.load(wp_ptr + rn[:, None] * KW + rw[None, :], mask=nmask[:, None], other=0)
         q = (wp[:, :, None] >> shifts[None, None, :]) & MASK
-        q = tl.reshape(q, (BLOCK_N, BLOCK_K // G, G)).to(tl.float32) - OFF
         rg = k0 // G + tl.arange(0, BLOCK_K // G)
-        s = tl.load(s_ptr + rn[:, None] * KG + rg[None, :], mask=nmask[:, None], other=0).to(tl.float32)
-        w = tl.reshape(q * s[:, :, None], (BLOCK_N, BLOCK_K)).to(tl.bfloat16)      # dequantized tile
+        s = tl.load(s_ptr + rn[:, None] * KG + rg[None, :], mask=nmask[:, None], other=0)
+        if DQ == 0:       # int -> fp32 convert (slow I2F), subtract the offset, scale in fp32
+            q = tl.reshape(q, (BLOCK_N, BLOCK_K // G, G)).to(tl.float32) - OFF
+            w = tl.reshape(q * s.to(tl.float32)[:, :, None], (BLOCK_N, BLOCK_K)).to(tl.bfloat16)
+        else:             # magic number: bits 0x4300|q ARE the bf16 number 128+q (ulp is 1 at 128)
+            f = (q | 0x4300).to(tl.int16).to(tl.bfloat16, bitcast=True)
+            f = tl.reshape(f, (BLOCK_N, BLOCK_K // G, G))
+            if DQ == 1:   # bf16: (128+q) - (128+OFF) is exact, then one bf16 multiply = same rounding as before
+                w = (f - (128 + OFF)) * s[:, :, None]
+            else:         # fp32 FMA, one cast
+                w = (f.to(tl.float32) - (128 + OFF)) * s.to(tl.float32)[:, :, None]
+            w = tl.reshape(w, (BLOCK_N, BLOCK_K)).to(tl.bfloat16)
         rk = k0 + tl.arange(0, BLOCK_K)
         x = tl.load(x_ptr + rm[:, None] * K + rk[None, :], mask=mmask[:, None], other=0)
         acc += tl.dot(x, tl.trans(w))                                              # [BLOCK_M, BLOCK_N]
     tl.store(y_ptr + (pid_k * M + rm[:, None]) * N + rn[None, :], acc, mask=mmask[:, None] & nmask[None, :])
+
+
+DQ = 0   # dequantization method of the small-M kernel (see _gemm_kernel; aio/m3e_bench.py measures them)
 
 
 def gemm_small_m(x: torch.Tensor, w: QLinear) -> torch.Tensor:
@@ -224,5 +237,5 @@ def gemm_small_m(x: torch.Tensor, w: QLinear) -> torch.Tensor:
     y = torch.empty((split, M, w.N), dtype=torch.float32, device=x.device)
     grid = lambda meta: (triton.cdiv(w.N, meta["BLOCK_N"]), split, triton.cdiv(M, block_m))
     _gemm_kernel[grid](x.contiguous(), w.packed, w.scale, y, M, w.N, w.K, w.K // split,
-                       BITS=w.bits, BLOCK_M=block_m)
+                       BITS=w.bits, BLOCK_M=block_m, DQ=DQ)
     return y.sum(0).to(torch.bfloat16)

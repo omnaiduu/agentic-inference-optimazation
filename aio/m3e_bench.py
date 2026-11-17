@@ -1,0 +1,117 @@
+"""Milestone 3e: int4 GEMM at M = 32 users - can we get closer to the 864 GB/s memory floor?
+
+Variants, timed per weight shape of Gemma 4 E2B with CUDA-graph replay (random weights):
+  cur    : our current Triton kernel (int -> fp32 convert, subtract 8, scale, cast to bf16)
+  magic  : same kernel, but the 4-bit value is OR-ed into the bit pattern of bf16 128.0 (0x4300),
+           which IS the number 128+q; subtract 136 -> q-8 exactly. No int->float convert
+           instruction (the trick behind FasterTransformer / Marlin, Kim et al. 2022, arXiv 2211.10017)
+  magic32: magic bits, then the subtract+scale as one fp32 FMA
+  marlin : vLLM's Marlin CUDA kernel (IST-DASLab, arXiv 2408.11743) - the target to beat
+  bf16   : cuBLAS on the dense bf16 copy (4x the bytes)
+Also checks every variant against the bf16 reference.
+
+Run:  modal run -m aio.m3e_bench
+"""
+import json
+import pathlib
+
+import modal
+
+from aio.common import GPU, VOLUMES, commit_volumes, gpu_image
+from aio.m3c_bench import SHAPES, timeit
+
+app = modal.App("aio-m3e-bench")
+
+
+@app.function(image=gpu_image, gpu=GPU, volumes=VOLUMES, timeout=3600)
+def bench(M: int = 32) -> dict:
+    import inspect
+
+    import torch
+    import torch.nn.functional as F
+
+    from aio.engine import quant
+    from aio.engine.quant import QLinear, quantize_rtn
+
+    dev, bf = "cuda", torch.bfloat16
+    out = {"M": M, "shapes": {}}
+
+    # ---------- Marlin through vLLM (best effort: the API moves between versions) ----------
+    marlin = None
+    try:
+        from vllm import _custom_ops as ops
+        from vllm.model_executor.layers.quantization.utils import marlin_utils as mu
+        from vllm.model_executor.layers.quantization.utils.marlin_utils_test import marlin_quantize
+        from vllm.scalar_type import scalar_types
+        print("marlin_quantize", inspect.signature(marlin_quantize), flush=True)
+        print("apply_gptq_marlin_linear", inspect.signature(mu.apply_gptq_marlin_linear), flush=True)
+
+        def make_marlin(w):                     # w: bf16 [N, K]
+            N, K = w.shape
+            r = marlin_quantize(w.t().contiguous(), scalar_types.uint4b8, 32, act_order=False)
+            w_ref, q_w, s, g_idx, sort_idx = r[0], r[1], r[2], r[3], r[4]
+            ws = mu.marlin_make_workspace_new(w.device)
+            zp = mu.marlin_make_empty_g_idx(w.device)
+
+            def run(x):
+                return mu.apply_gptq_marlin_linear(
+                    input=x, weight=q_w, weight_scale=s, weight_zp=zp, g_idx=g_idx,
+                    g_idx_sort_indices=sort_idx, workspace=ws, wtype=scalar_types.uint4b8,
+                    output_size_per_partition=N, input_size_per_partition=K, is_k_full=True)
+            return run, w_ref.t()
+        marlin = make_marlin
+    except Exception as e:                      # noqa: BLE001
+        print(f"marlin unavailable: {type(e).__name__}: {e}", flush=True)
+
+    variants = {"cur": 0, "magic": 1, "magic32": 2}
+    tot = {k: 0.0 for k in [*variants, "marlin", "bf16"]}
+    tot_bytes = 0.0
+    for name, (N, K, n_layers) in SHAPES.items():
+        w = torch.randn(N, K, device=dev, dtype=bf) * 0.02
+        ql = QLinear(*quantize_rtn(w, 4), 4, K)
+        x = torch.randn(M, K, device=dev, dtype=bf)
+        ref = F.linear(x.float(), ql.dense.float())
+        nbytes = N * K / 2 + N * K / 32 * 2
+        tot_bytes += nbytes * n_layers
+        row = {"MB": nbytes / 1e6}
+        for vname, dq in variants.items():
+            quant.DQ = dq
+            y = quant.gemm_small_m(x, ql).float()
+            err = ((y - ref).abs().max() / ref.abs().max()).item()
+            t = timeit(lambda: quant.gemm_small_m(x, ql))
+            row[vname] = {"us": t, "GBs": nbytes / t / 1e3, "rel_err": err}
+        quant.DQ = 0
+        row["bf16"] = {"us": timeit(lambda: F.linear(x, ql.dense))}
+        if marlin is not None:
+            try:
+                run, w_ref = marlin(w)
+                ym = run(x).float()
+                refm = F.linear(x.float(), w_ref.float())
+                err = ((ym - refm).abs().max() / refm.abs().max()).item()
+                t = timeit(lambda: run(x))
+                row["marlin"] = {"us": t, "GBs": nbytes / t / 1e3, "rel_err": err}
+                del run, w_ref
+            except Exception as e:              # noqa: BLE001
+                print(f"marlin failed on {name}: {type(e).__name__}: {e}", flush=True)
+        for k in tot:
+            if k in row:
+                tot[k] += row[k]["us"] * n_layers
+        out["shapes"][name] = row
+        print(f"{name:15s} {nbytes / 1e6:6.1f} MB  " + "  ".join(
+            f"{k} {row[k]['us']:6.1f}us" + (f" ({row[k]['GBs']:3.0f} GB/s, err {row[k]['rel_err']:.3f})"
+                                             if "GBs" in row[k] else "")
+            for k in [*variants, "marlin", "bf16"] if k in row), flush=True)
+        del w, ql
+        torch.cuda.empty_cache()
+    out["total_ms"] = {k: v / 1000 for k, v in tot.items()}
+    out["floor_ms"] = tot_bytes / 864e3 / 1000
+    print("===== per decode step at M=%d: " % M + ", ".join(f"{k} {v / 1000:.2f} ms" for k, v in tot.items())
+          + f", floor at 864 GB/s {out['floor_ms']:.2f} ms", flush=True)
+    commit_volumes()
+    return out
+
+
+@app.local_entrypoint()
+def main(m: int = 32):
+    res = bench.remote(m)
+    pathlib.Path(f"results/m3e_bench_{GPU}_M{m}.json").write_text(json.dumps(res, indent=1))
