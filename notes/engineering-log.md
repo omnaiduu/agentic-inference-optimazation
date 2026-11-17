@@ -530,3 +530,64 @@ token prompt (5 chunks) 64/64. Oracle agreement 91.2% vs 90.7%: no loss.
   during each mixed step, and the decode-only step is 6.0 ms against a ~3 ms ideal; its
   attention is generic cuBLAS batched matmuls (`wmma 32x32` kernels, ~3 ms of the step).
 - Startup is still ~32 min of compiling (24 decode graphs + 4 mixed-step shapes).
+
+## Milestone 3d (day 2, afternoon): kernels, FP8, graphs, and the GIL
+
+The human said: no H100, keep improving on the L40S, research harder with Exa.
+
+### Research (Exa)
+- L40S datasheet (nvidia.com): **362 dense BF16 TFLOPS, 733 dense FP8**, 864 GB/s.
+- vLLM's Triton decode attention packs the query heads that share a KV head into the tile's
+  M dimension and splits long caches (flash-decoding).
+- FP8 with row-wise scales works on sm89 since PyTorch 2.7 (pytorch PR #145676); the PyTorch
+  maintainers call the row-wise template "not optimal" (issue #153555).
+- vLLM overlaps CPU scheduling with GPU execution (async scheduling, Model Runner V2 docs).
+
+### Microbenchmarks (`aio/m3c_bench.py`, random weights, 32 users / 512 rows)
+**Mistake worth telling:** the first run timed each kernel call eagerly and got ~95 us for every
+int4 matmul, whatever its size. That was the CPU launch overhead, not the GPU. Timing a CUDA graph
+of 20 calls gave the real numbers:
+
+| What (per 32-user decode step) | Time | Floor |
+|---|---|---|
+| int4 matmuls (our Triton kernel) | 3.6 ms (~410 GB/s) | 1.5 ms at 864 GB/s |
+| attention, 7 full layers: einsum over a 2,048 bucket | 203 us/layer | |
+| attention, 7 full layers: **our flash-decode kernel** | **40 us/layer** | |
+| attention, 28 ring layers: einsum / our kernel | 12 / 22 us/layer | |
+
+| What (per 480+32-row mixed step) | Time |
+|---|---|
+| BF16 cuBLAS (150-240 TFLOPS) | 9.55 ms (floor 5.3 ms at 362 TFLOPS) |
+| Inductor max-autotune | ~same as cuBLAS |
+| FP8 row-wise scales | **25.4 ms (2.5x slower!)** |
+| **FP8 row-wise + `use_fast_accum=True`** | **7.78 ms** (relative error 3.7%) |
+| FP8 per-tensor (cuBLASLt) + fast accum | 8.34 ms |
+
+### Changes
+1. **Hybrid decode attention:** our kernel for full-attention layers when B >= 16; einsum otherwise.
+2. **FP8 prompt-chunk matmuls** (row-wise scales, fast accumulation) only for matrices >= 4096x1536;
+   small ones stay BF16 (faster there).
+3. **CUDA graphs for the mixed step** (4 attention buckets). Without a graph the step was CPU-bound:
+   it launches ~1,000 kernels.
+
+Check (`aio/m3b_check.py`): FP8 path 97.3% identical tokens to the verified path, oracle agreement
+91.5% (old path 90.7%): no accuracy loss. Decode step B=32: 6.01 → 5.23 ms. Mixed step: 17.85 →
+14.60 ms.
+
+### Result (`results/m2_ours-batch-fp8_L40S_b3.json`)
+| Users | Morning (b2) | **b3** | vLLM QAT |
+|---|---|---|---|
+| 1 | 295 tok/s, TTFT 41 ms | **298, TTFT 29 ms** | 206, TTFT 34 ms |
+| 8 | 1,407 | **1,479 (beats vLLM)** | 1,442 |
+| 32 | 2,779 | **3,161** (84% of vLLM) | 3,757 |
+
+Agreement 91.0%, GSM8K 66% (vLLM 68%, inside the noise).
+
+### The server's own timing breakdown at 32 users (new `[sched]` log line)
+`busy 7.74s = mixed 2.63s (192 steps, 13.7 ms) + decode 3.55s (164 launches of 4, 21.7 ms) +
+host bookkeeping 1.56s`. **20% of the time the GPU waited for Python:** ~4.4 ms per scheduler
+iteration. Cause: the scheduler thread and the web thread (32 streams, one event and one
+event-loop wake-up per token) share the GIL, and CPython lets a thread hold it for 5 ms
+(`sys.getswitchinterval()`) before switching. Fix: switch interval 0.5 ms, one hand-off per user
+per step, one SSE event per step (the benchmark counts tokens from `usage`, so this does not change
+the measurement; vLLM has the same `stream_interval` idea).
