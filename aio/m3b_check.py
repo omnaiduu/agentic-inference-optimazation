@@ -48,8 +48,8 @@ def check(ref: dict, marlin: bool = False) -> dict:
                     if getattr(w, "mq", None) is None:
                         continue
                     x = torch.randn(32, w.K, device="cuda", dtype=torch.bfloat16)
-                    ref = torch.nn.functional.linear(x.float(), w.dense.float())
-                    err = ((quant.linear_marlin(x, w).float() - ref).abs().max() / ref.abs().max()).item()
+                    yref = torch.nn.functional.linear(x.float(), w.dense.float())
+                    err = ((quant.linear_marlin(x, w).float() - yref).abs().max() / yref.abs().max()).item()
                     worst, n_mar = max(worst, err), n_mar + 1
         print(f"===== marlin conversion: {n_mar} matrices, worst max-error / max-value {worst:.4f}", flush=True)
         out["marlin_conv_err"] = worst
