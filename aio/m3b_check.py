@@ -23,7 +23,7 @@ app = modal.App("aio-m3b-check")
 
 
 @app.function(image=gpu_image, gpu=GPU, volumes=VOLUMES, timeout=3600)
-def check(ref: dict) -> dict:
+def check(ref: dict, marlin: bool = False) -> dict:
     import time
 
     import torch
@@ -37,6 +37,21 @@ def check(ref: dict) -> dict:
     q_dir = snapshot_download(QAT_ID, revision=QAT_SHA, allow_patterns=pats)
     m = BatchedGemma4(bf_dir, quant_dir=q_dir, lm_head_bits=4, max_batch=32)
     m.enable_fp8_prefill()                 # builds the FP8 weight copies; toggled below
+    if marlin:
+        m.enable_marlin()
+        # conversion check: Marlin on our repacked weights vs the bf16 dequantized copy, every layer
+        worst, n_mar = 0.0, 0
+        with torch.inference_mode():
+            for d in [m.W, *m.layer_w]:
+                for w in d.values():
+                    if getattr(w, "mq", None) is None:
+                        continue
+                    x = torch.randn(32, w.K, device="cuda", dtype=torch.bfloat16)
+                    ref = torch.nn.functional.linear(x.float(), w.dense.float())
+                    err = ((quant.linear_marlin(x, w).float() - ref).abs().max() / ref.abs().max()).item()
+                    worst, n_mar = max(worst, err), n_mar + 1
+        print(f"===== marlin conversion: {n_mar} matrices, worst max-error / max-value {worst:.4f}", flush=True)
+        out["marlin_conv_err"] = worst
     m.enable_compile()
     out = {"variants": {}}
     cases = ref["cases"]
@@ -73,7 +88,7 @@ def check(ref: dict) -> dict:
         hit_old = sum(a == b for o, c in zip(olds, cases) for a, b in zip(o, c["output_ids"]))
         print(f"===== old path: oracle agreement {hit_old}/{n} = {hit_old / n:.1%}", flush=True)
         out["oracle_old"] = hit_old / n
-        for fp8 in (False, True):
+        for fp8 in ((True,) if marlin else (False, True)):
             t0 = time.time()
             quant.FP8_PREFILL = fp8
             m.capture_mixed_graphs()                 # CUDA graphs of the mixed step for this setting
@@ -114,7 +129,7 @@ def check(ref: dict) -> dict:
 
         # ---- speed: mixed step, 31 decode rows + one 480-token chunk, BF16 vs FP8
         out["mixed_ms"] = {}
-        for fp8 in (False, True):
+        for fp8 in ((True,) if marlin else (False, True)):
             quant.FP8_PREFILL = fp8
             args = ([5] * 31, [ctx] * 31, other[:m.chunk], 0)
             m.start_prefill()
@@ -132,7 +147,7 @@ def check(ref: dict) -> dict:
 
 
 @app.local_entrypoint()
-def main():
+def main(marlin: bool = False):
     ref = json.loads(pathlib.Path("results/s1_reference.json").read_text())
-    res = check.remote(ref)
-    pathlib.Path(f"results/m3c_check_{GPU}.json").write_text(json.dumps(res, indent=1))
+    res = check.remote(ref, marlin)
+    pathlib.Path(f"results/m3{'e' if marlin else 'c'}_check_{GPU}.json").write_text(json.dumps(res, indent=1))

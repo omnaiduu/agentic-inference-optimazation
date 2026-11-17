@@ -51,6 +51,7 @@ def main():
     ap.add_argument("--chunk", type=int, default=4)             # decode tokens per graph launch
     ap.add_argument("--prefill-chunk", type=int, default=480)   # prompt tokens per mixed step
     ap.add_argument("--fp8-prefill", action="store_true")       # FP8 matmuls for prompt chunks
+    ap.add_argument("--marlin", action="store_true")            # Marlin int4 kernel for decode matmuls
     args = ap.parse_args()
 
     t0 = time.time()
@@ -60,6 +61,8 @@ def main():
                           chunk=args.prefill_chunk)
     if args.fp8_prefill:
         model.enable_fp8_prefill()
+    if args.marlin:
+        model.enable_marlin()
     model.enable_compile()
     model.capture_batch_graphs()
     model.capture_mixed_graphs()

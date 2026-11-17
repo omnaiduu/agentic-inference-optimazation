@@ -257,6 +257,16 @@ class BatchedGemma4(Gemma4E2B):
         quant.FP8_PREFILL = True
         torch.cuda.empty_cache()
 
+    def enable_marlin(self):
+        """Use vLLM's Marlin kernel for decode-sized int4 matmuls (2..64 rows), bf16 for the tiny PLE ones."""
+        seen = set()
+        for d in [self.W, *self.layer_w]:
+            for w in d.values():
+                if isinstance(w, QLinear) and id(w) not in seen:
+                    quant.make_marlin(w)
+                    seen.add(id(w))
+        torch.cuda.empty_cache()
+
     def start_prefill(self):
         self.bring_pos[self.max_b].fill_(-10**9)
 

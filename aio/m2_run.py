@@ -48,12 +48,14 @@ def run_config(name: str, ref: dict) -> dict:
         model, rev = (QAT_ID, QAT_SHA) if "qat" in name else (MODEL_ID, MODEL_SHA)
         cmd = ["vllm", "serve", model, "--revision", rev, "--port", "8000", *COMMON]
         url, levels = "http://127.0.0.1:8000", (1, 8, 32)
-    elif name.startswith("ours-batch"):          # ours-batch, ours-batch-fp8
+    elif name.startswith("ours-batch"):          # ours-batch, ours-batch-fp8, ours-batch-fp8-marlin
         model = MODEL_ID
         cmd = ["python", "-m", "aio.engine.server_batch", "--model-dir", bf_dir, "--quant-dir", q_dir,
                "--lm-head-bits", "4", "--port", "8000"]
-        if name.endswith("fp8"):
+        if "fp8" in name:
             cmd.append("--fp8-prefill")
+        if "marlin" in name:
+            cmd.append("--marlin")
         url, levels = "http://127.0.0.1:8000", (1, 8, 32)
     else:
         model = MODEL_ID

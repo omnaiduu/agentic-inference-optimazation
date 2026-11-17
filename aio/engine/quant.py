@@ -92,12 +92,54 @@ def linear_fp8(x: torch.Tensor, w: "QLinear") -> torch.Tensor:
                             use_fast_accum=True)
 
 
+# Marlin (IST-DASLab, arXiv 2408.11743), the hand-written CUDA int4 kernel that ships inside vLLM.
+# Measured at M = 32 users on the L40S with weights streamed from memory (aio/m3e_bench.py): Marlin
+# 3.01 ms per decode step vs 3.6-3.9 ms for every Triton variant we tried (magic-number dequant,
+# split-K sweep, tl.range pipelining). It wins through an offline weight layout that matches the
+# tensor-core fragments, and cp.async multi-stage pipelining. Our checkpoint packs 8 int4 values
+# per int32 along K as [N, K/8] (+8 offset) = GPTQ's [K/8, N] layout transposed, so it converts.
+MARLIN_MIN_M = 2          # rows from which Marlin is used (set from the M = 1 / 8 / 32 benchmarks)
+SMALL_DENSE_NK = 1 << 20  # matrices smaller than this (the PLE gate/proj) run bf16 cuBLAS at M >= 2
+_marlin = {}
+
+
+def make_marlin(w: "QLinear"):
+    from vllm import _custom_ops as ops
+    from vllm.model_executor.layers.quantization.utils import marlin_utils as mu
+    from vllm.scalar_type import scalar_types
+    if w.N * w.K < SMALL_DENSE_NK:
+        w.small_dense = True
+        return
+    if w.bits != 4 or w.N % 64 or w.K % 128:
+        return
+    if not _marlin:
+        _marlin.update(mu=mu, wtype=scalar_types.uint4b8,
+                       ws=mu.marlin_make_workspace_new(w.packed.device),
+                       zp=torch.empty(0, dtype=torch.int32, device=w.packed.device))
+    w.mq = ops.gptq_marlin_repack(w.packed.t().contiguous(), w.K, w.N, 4)
+    w.ms = mu.marlin_permute_scales(w.scale.t().contiguous(), w.K, w.N, GROUP)
+
+
+def linear_marlin(x: torch.Tensor, w: "QLinear") -> torch.Tensor:
+    m = _marlin
+    return m["mu"].apply_gptq_marlin_linear(
+        input=x, weight=w.mq, weight_scale=w.ms, weight_zp=m["zp"], workspace=m["ws"], wtype=m["wtype"],
+        output_size_per_partition=w.N, input_size_per_partition=w.K)
+
+
 def linear(x: torch.Tensor, w) -> torch.Tensor:
     if isinstance(w, torch.Tensor):
         return torch.nn.functional.linear(x, w)
-    if x.shape[0] == 1:
+    M = x.shape[0]
+    if M <= 64:
+        if M >= MARLIN_MIN_M:
+            if getattr(w, "mq", None) is not None:
+                return linear_marlin(x, w)
+            if getattr(w, "small_dense", False):
+                return torch.nn.functional.linear(x, w.dense)
+    if M == 1:
         return gemv(x, w)
-    if x.shape[0] <= 64:
+    if M <= 64:
         return gemm_small_m(x, w)
     if FP8_PREFILL and getattr(w, "w8", None) is not None and x.shape[0] % 16 == 0:
         return linear_fp8(x, w)

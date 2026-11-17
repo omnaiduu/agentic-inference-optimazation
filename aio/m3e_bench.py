@@ -24,7 +24,7 @@ app = modal.App("aio-m3e-bench")
 
 
 @app.function(image=gpu_image, gpu=GPU, volumes=VOLUMES, timeout=3600)
-def bench(M: int = 32) -> dict:
+def bench(M: int = 32, quick: bool = False) -> dict:
     import inspect
 
     import torch
@@ -71,7 +71,7 @@ def bench(M: int = 32) -> dict:
         it = itertools.cycle(objs)
         return lambda: fn(next(it))
 
-    variants = {"cur": 0, "magic": 1, "magic32": 2, "pipe": 1}
+    variants = {"cur": 0, "magic": 1} if quick else {"cur": 0, "magic": 1, "magic32": 2, "pipe": 1}
     import triton
     pipe_kernel = triton.autotune(       # same kernel, loop pipelined with tl.range(num_stages=LS)
         prune_configs_by={"early_config_prune": quant._prune},
@@ -96,21 +96,24 @@ def bench(M: int = 32) -> dict:
         for vname, dq in variants.items():
             quant.DQ = dq
             quant._gemm_kernel = pipe_kernel if vname == "pipe" else plain_kernel
-            y = quant.gemm_small_m(x, ql).float()
+            f = quant.gemv if M == 1 else quant.gemm_small_m      # M = 1 runs our GEMV kernel in production
+            y = f(x, ql).float()
             err = ((y - ref).abs().max() / ref.abs().max()).item()
-            t = timeit(rot(lambda q: quant.gemm_small_m(x, q), copies))
+            t = timeit(rot(lambda q: f(x, q), copies))
             row[vname] = {"us": t, "GBs": nbytes / t / 1e3, "rel_err": err}
         quant._gemm_kernel = plain_kernel
-        row["pipe"]["cfg"] = str(pipe_kernel.best_config)
+        if "pipe" in row:
+            row["pipe"]["cfg"] = str(pipe_kernel.best_config)
         quant.DQ = 1
         row["split"] = {}
-        for sp in (1, 2, 4, 8, 16):
+        for sp in ((1, 2, 4, 8, 16) if not quick and M > 1 else ()):
             if K % (sp * 128) or (K // sp) < 128:
                 continue
             row["split"][sp] = timeit(rot(lambda q: quant.gemm_small_m(x, q, split=sp), copies))
         print(f"{name:15s} magic by split: " + "  ".join(f"{k}: {v:6.1f}us" for k, v in row["split"].items()),
               flush=True)
-        tot["best_split"] = tot.get("best_split", 0.0) + min(row["split"].values()) * n_layers
+        if row["split"]:
+            tot["best_split"] += min(row["split"].values()) * n_layers
         quant.DQ = 0
         row["bf16"] = {"us": timeit(rot(lambda q: F.linear(x, q.dense), copies))}
         if marlin is not None:
@@ -144,6 +147,6 @@ def bench(M: int = 32) -> dict:
 
 
 @app.local_entrypoint()
-def main(m: int = 32):
-    res = bench.remote(m)
+def main(m: int = 32, quick: bool = False):
+    res = bench.remote(m, quick)
     pathlib.Path(f"results/m3e_bench_{GPU}_M{m}.json").write_text(json.dumps(res, indent=1))
