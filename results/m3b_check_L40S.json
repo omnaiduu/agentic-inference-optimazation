@@ -10,8 +10,8 @@
   {
    "prompt_len": 21,
    "n": 64,
-   "same": 64,
-   "oracle_old": 60,
+   "same": 63,
+   "oracle_old": 59,
    "oracle_new": 60
   },
   {
@@ -19,7 +19,7 @@
    "n": 64,
    "same": 63,
    "oracle_old": 53,
-   "oracle_new": 54
+   "oracle_new": 53
   },
   {
    "prompt_len": 17,
@@ -31,14 +31,14 @@
   {
    "prompt_len": 27,
    "n": 64,
-   "same": 62,
-   "oracle_old": 59,
+   "same": 63,
+   "oracle_old": 60,
    "oracle_new": 61
   },
   {
    "prompt_len": 23,
    "n": 64,
-   "same": 63,
+   "same": 62,
    "oracle_old": 59,
    "oracle_new": 58
   },
@@ -58,12 +58,144 @@
   }
  ],
  "total": 410,
- "same": 405,
+ "same": 404,
  "oracle_old": 372,
- "oracle_new": 375,
+ "oracle_new": 374,
  "mixed_ms": {
-  "0": 19.25233285000445,
-  "8": 20.51820419999899,
-  "31": 20.503888499996492
+  "224_0": 12.095747349997055,
+  "224_31": 13.35397295000007,
+  "480_0": 16.357980650002446,
+  "480_31": 17.85424464999892
+ },
+ "mixed_kernels": {
+  "total_us": 11971.591800000007,
+  "kernels": 921.0,
+  "top": [
+   [
+    "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_256x128_32x3_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_256x128_32x3_tn_align8::Params)",
+    2629.5914000000093,
+    20
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_128x128_ldg8_f2f_stages_64x3_tn",
+    1723.3720000000058,
+    38
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_tn_align8::Params)",
+    1093.4087999999879,
+    35
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x128_32x4_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x128_32x4_tn_align8::Params)",
+    1038.2343999999903,
+    20
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x2_nn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x2_nn_align8::Params)",
+    617.7096000000045,
+    7
+   ],
+   [
+    "ampere_bf16_s1688gemm_bf16_128x128_ldg8_f2f_stages_32x1_tn",
+    481.01580000001,
+    38
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_128x64_ldg8_f2f_stages_64x4_tn",
+    427.9819999999953,
+    28
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_nn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_nn_align8::Params)",
+    426.76180000000346,
+    28
+   ],
+   [
+    "_gemm_kernel",
+    411.80000000000075,
+    1
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x2_tn_align8::Params)",
+    355.06259999999384,
+    35
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_64x64_ldg8_f2f_stages_64x5_tn",
+    334.3599999999792,
+    51
+   ],
+   [
+    "triton_per_fused__to_copy_add_cat_cos_mean_mul_neg_pow_sin_slice_unsqueeze_view_50",
+    217.0401999999916,
+    16
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_64x64_ldg8_f2f_stages_64x5_nn",
+    190.48520000000326,
+    28
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_128x64_ldg8_f2f_stages_32x6_tn",
+    172.90479999999994,
+    12
+   ],
+   [
+    "triton_per_fused__to_copy_add_cat_cos_mean_mul_neg_pow_sin_slice_unsqueeze_view_11",
+    168.14379999999903,
+    12
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_128x64_ldg8_f2f_stages_64x3_nn",
+    140.77700000000547,
+    7
+   ],
+   [
+    "triton_poi_fused_gelu_mul_split_51",
+    129.77440000000644,
+    20
+   ],
+   [
+    "void cublasLt::splitKreduce_kernel<32, 16, int, __nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16, false, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplitKParams<float>, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, __nv_bfloat16*, float const*, float const*, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, void*, long, float*, int*, float*, float*, float const*, float const*, float const*, float const*, float const*)",
+    129.49840000000233,
+    42
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_21",
+    120.89760000001452,
+    34
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_16",
+    112.32160000001154,
+    35
+   ],
+   [
+    "triton_per_fused__softmax__to_copy_bitwise_and_bitwise_not_bmm_clone_gt_le_masked_fill_permute_prepare_softmax_online_sub_unsqueeze_view_14",
+    110.70219999999566,
+    28
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_19",
+    110.22860000000304,
+    35
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_128x64_ldg8_f2f_stages_64x3_tn",
+    83.74500000000516,
+    4
+   ],
+   [
+    "triton_red_fused__softmax__to_copy_bitwise_not_bmm_clone_le_masked_fill_permute_prepare_softmax_online_slice_unsqueeze_view_33",
+    78.43959999999316,
+    7
+   ],
+   [
+    "triton_red_fused__to_copy_argmax_div_mul_sum_tanh_77",
+    63.23240000000078,
+    1
+   ]
+  ]
  }
 }

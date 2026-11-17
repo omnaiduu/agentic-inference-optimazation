@@ -2,7 +2,7 @@
 
 One scheduler thread owns the GPU and loops:
   1. if a prompt is waiting: run a MIXED step = one decode token for every active request + the
-     next chunk (224 tokens) of that prompt, in one forward pass (chunked prefill, like vLLM).
+     next chunk (480 tokens) of that prompt, in one forward pass (chunked prefill, like vLLM).
      When its last chunk is done, the request joins the active batch.
   2. otherwise: run one batched decode chunk (k tokens, CUDA graphs) for every active request,
   3. stream the new tokens, retire finished requests and compact the slots.
@@ -47,7 +47,7 @@ def main():
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--max-batch", type=int, default=32)
     ap.add_argument("--chunk", type=int, default=4)             # decode tokens per graph launch
-    ap.add_argument("--prefill-chunk", type=int, default=224)   # prompt tokens per mixed step
+    ap.add_argument("--prefill-chunk", type=int, default=480)   # prompt tokens per mixed step
     args = ap.parse_args()
 
     t0 = time.time()

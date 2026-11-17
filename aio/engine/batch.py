@@ -28,10 +28,10 @@ BATCH_SIZES = (1, 2, 4, 8, 16, 32)
 
 
 class BatchedGemma4(Gemma4E2B):
-    def __init__(self, *args, max_batch: int = 32, chunk: int = 224, **kw):
+    def __init__(self, *args, max_batch: int = 32, chunk: int = 480, **kw):
         super().__init__(*args, **kw)
         self.max_b = max_batch
-        self.chunk = chunk                       # prefill chunk; 224 + 32 decode rows = 256 = one cuBLAS tile
+        self.chunk = chunk                       # prefill chunk; 480 + 32 decode rows = 512 rows = whole GEMM tiles
         assert chunk <= self.window
         dev, dt = self.device, self.dtype
         n_slots = max_batch + 1                  # + 1 staging slot for the prompt being prefilled
