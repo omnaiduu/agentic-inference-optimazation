@@ -48,20 +48,28 @@ def bench(M: int = 32) -> dict:
 
         def make_marlin(w):                     # w: bf16 [N, K]
             N, K = w.shape
-            r = marlin_quantize(w.t().contiguous(), scalar_types.uint4b8, 32, act_order=False)
-            w_ref, q_w, s, g_idx, sort_idx = r[0], r[1], r[2], r[3], r[4]
+            r = marlin_quantize(w.t().contiguous(), scalar_types.uint4b8, 32)
+            w_ref, q_w, s = r[0], r[1], r[2]
             ws = mu.marlin_make_workspace_new(w.device)
             zp = mu.marlin_make_empty_g_idx(w.device)
 
             def run(x):
                 return mu.apply_gptq_marlin_linear(
-                    input=x, weight=q_w, weight_scale=s, weight_zp=zp, g_idx=g_idx,
-                    g_idx_sort_indices=sort_idx, workspace=ws, wtype=scalar_types.uint4b8,
-                    output_size_per_partition=N, input_size_per_partition=K, is_k_full=True)
+                    input=x, weight=q_w, weight_scale=s, weight_zp=zp, workspace=ws,
+                    wtype=scalar_types.uint4b8, output_size_per_partition=N, input_size_per_partition=K)
             return run, w_ref.t()
         marlin = make_marlin
     except Exception as e:                      # noqa: BLE001
         print(f"marlin unavailable: {type(e).__name__}: {e}", flush=True)
+
+    import itertools
+    import math
+
+    def rot(fn, objs):
+        """Call fn on a different weight copy each time: 20 calls x a few copies > the 96 MB L2,
+        so every call streams its weights from memory, as in a real decode step."""
+        it = itertools.cycle(objs)
+        return lambda: fn(next(it))
 
     variants = {"cur": 0, "magic": 1, "magic32": 2}
     tot = {k: 0.0 for k in [*variants, "marlin", "bf16"]}
@@ -70,6 +78,8 @@ def bench(M: int = 32) -> dict:
         w = torch.randn(N, K, device=dev, dtype=bf) * 0.02
         ql = QLinear(*quantize_rtn(w, 4), 4, K)
         x = torch.randn(M, K, device=dev, dtype=bf)
+        n_copies = min(20, math.ceil(300e6 / (N * K / 2)))
+        copies = [ql] + [QLinear(*quantize_rtn(w + 1e-3 * i, 4), 4, K) for i in range(1, n_copies)]
         ref = F.linear(x.float(), ql.dense.float())
         nbytes = N * K / 2 + N * K / 32 * 2
         tot_bytes += nbytes * n_layers
@@ -78,19 +88,20 @@ def bench(M: int = 32) -> dict:
             quant.DQ = dq
             y = quant.gemm_small_m(x, ql).float()
             err = ((y - ref).abs().max() / ref.abs().max()).item()
-            t = timeit(lambda: quant.gemm_small_m(x, ql))
+            t = timeit(rot(lambda q: quant.gemm_small_m(x, q), copies))
             row[vname] = {"us": t, "GBs": nbytes / t / 1e3, "rel_err": err}
         quant.DQ = 0
-        row["bf16"] = {"us": timeit(lambda: F.linear(x, ql.dense))}
+        row["bf16"] = {"us": timeit(rot(lambda q: F.linear(x, q.dense), copies))}
         if marlin is not None:
             try:
-                run, w_ref = marlin(w)
+                runs = [marlin(w + 1e-3 * i) for i in range(n_copies)]
+                run, w_ref = runs[0]
                 ym = run(x).float()
                 refm = F.linear(x.float(), w_ref.float())
                 err = ((ym - refm).abs().max() / refm.abs().max()).item()
-                t = timeit(lambda: run(x))
+                t = timeit(rot(lambda r: r[0](x), runs))
                 row["marlin"] = {"us": t, "GBs": nbytes / t / 1e3, "rel_err": err}
-                del run, w_ref
+                del run, w_ref, runs
             except Exception as e:              # noqa: BLE001
                 print(f"marlin failed on {name}: {type(e).__name__}: {e}", flush=True)
         for k in tot:
@@ -101,7 +112,7 @@ def bench(M: int = 32) -> dict:
             f"{k} {row[k]['us']:6.1f}us" + (f" ({row[k]['GBs']:3.0f} GB/s, err {row[k]['rel_err']:.3f})"
                                              if "GBs" in row[k] else "")
             for k in [*variants, "marlin", "bf16"] if k in row), flush=True)
-        del w, ql
+        del w, ql, copies
         torch.cuda.empty_cache()
     out["total_ms"] = {k: v / 1000 for k, v in tot.items()}
     out["floor_ms"] = tot_bytes / 864e3 / 1000
