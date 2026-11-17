@@ -605,3 +605,57 @@ the measurement; vLLM has the same `stream_interval` idea).
 - Server startup with a warm compile cache in the Modal volume: **434 s** (was 1,907 s cold).
 - Remaining time at 32 users (6.43 s busy): mixed steps 2.52 s, decode 3.33 s (5.1 ms per step,
   of which ~3.6 ms is our int4 matmul kernel at ~410 GB/s), host 0.58 s.
+
+## Milestone 3e (day 2 evening): the int4 matmul at 32 users
+
+Goal: the int4 matmuls take ~3.6–3.9 ms of the 5.1 ms decode step at 32 users. Reading the 1.27 GB of
+4-bit weights at the 864 GB/s memory limit would take 1.48 ms. Benchmark: `aio/m3e_bench.py` (random
+weights with the real Gemma 4 E2B shapes, timed by CUDA-graph replay).
+
+### Measurement bug first: the 96 MB L2 cache
+The first run said cuBLAS bf16 beat our int4 kernel on most matrices. Impossible: gate_up in bf16
+"read" 37.7 MB in 16.8 us = 2.2 TB/s, 2.6x the memory bandwidth. The benchmark replayed the same
+matrix 20 times, so after the first call it sat in the L40S's 96 MB L2 cache. In a real decode step
+the weights of 35 layers stream through and nothing stays cached. Fix: each timed call uses a
+different copy of the weights (enough copies to exceed 300 MB). Only the lm_head row (226 MB, too
+big to cache) was right in the first run.
+
+### What we tried on our Triton kernel (32 users, per decode step, cache-busted)
+| Variant | int4 matmul time | Idea (source) |
+|---|---|---|
+| current | 3.88–3.93 ms | dequantize to fp32, scale, cast to bf16, `tl.dot` |
+| magic-number dequant | 3.78 ms | OR the 4 bits into the bf16 pattern of 128.0 (0x4300) = 128+q, subtract 136: no int→float instruction (Kim et al. 2022; Marlin paper arXiv 2408.11743) |
+| magic, fp32 FMA | 3.87 ms | same, scale in fp32 |
+| best split-K per matrix | 3.62 ms | GemLite tunes the K-split 1–16 per shape; ours picked a fixed rule |
+| `tl.range(num_stages=)` loop pipelining | 3.82 ms | Triton docs: kernel-level `num_stages` only prefetches loads that feed `tl.dot`; our weight load goes through shifts first (triton PR #3092/#3415) |
+| **Marlin (vLLM's CUDA kernel)** | **3.01 ms** | offline weight layout matching tensor-core fragments + cp.async multi-stage pipelining |
+| cuBLAS bf16 (dense copy) | 7.21 ms | 4x the bytes; streams at 650–800 GB/s |
+
+Lesson: unpacking arithmetic was not the bottleneck (the magic trick gave 3%). The kernel is
+latency-bound: too few bytes in flight. Four Triton tricks gave ~8% in total. Marlin's advantage
+is a hand-made data layout and hand-scheduled async copies, which Triton does not express easily.
+
+### Per-matrix winners (us per call, cache-busted)
+| Matrix (MB, layers) | M=1: ours GEMV / Marlin / bf16 | M=8: ours / Marlin | M=32: ours (best split) / Marlin |
+|---|---|---|---|
+| qkv_slide (2.2, 12) | 6.3 / **4.7** / 12.9 | 9.1 / **4.8** | 9.5 / **6.4** |
+| q_full_shared (3.5, 4) | 6.9 / **4.6** / 19.9 | 11.1 / **4.8** | 10.9 / **6.5** |
+| o_slide (1.8, 28) | **5.9** / 6.6 / 10.5 | 8.1 / **6.7** | **8.0** / 8.5 |
+| gate_up_wide (21.2, 20) | 33.4 / **29.2** / 105.6 | 40.4 / **29.3** | 46.6 / **30.2** |
+| down_wide (10.6, 20) | **19.6** / 20.7 / 59.4 | 23.4 / **20.7** | 26.4 / **21.9** |
+| ple_gate (0.2, 35) | 4.7 / 10.3 / **2.4** | 5.9 / 10.2 / **3.8** (bf16) | 5.5 / 12.0 / **3.8** (bf16) |
+| lm_head (226.5, 1) | 357 / **336** / 1196 | 429 / **341** | 528 / **367** |
+
+Dispatch rule now in `quant.linear` (enabled by `--marlin`):
+- PLE gate/proj (< 1M weights): bf16 cuBLAS at every batch size.
+- 2–64 rows: Marlin.
+- 1 row: Marlin only when K = 1536 (qkv, q, gate_up, lm_head); our GEMV for o and down.
+- Prompt chunks (> 64 rows): unchanged (FP8 / bf16 cuBLAS).
+
+Estimated int4 time per step: 32 users 3.9 → ~2.7 ms, 8 users 3.2 → ~2.5 ms, 1 user 2.6 → ~2.3 ms.
+
+### Conversion check on the real model (`aio/m3b_check.py --marlin`)
+Our checkpoint packs 8 values per int32 along K as `[N, K/8]` with a +8 offset; that is GPTQ's
+`[K/8, N]` layout transposed, Marlin's `uint4b8` type. Scales `[N, K/32]` → `[K/32, N]` →
+`marlin_permute_scales`. All 141 matrices match the bf16 dequantized reference to 0.0037 max relative
+error (bf16 rounding level). Compile + CUDA-graph + accuracy run: in progress.

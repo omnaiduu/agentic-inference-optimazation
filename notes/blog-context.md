@@ -96,6 +96,15 @@ on a B200, with ~1 week and ~$1,000s of compute
    | 8 | 1,717 | 1,442 | 1.19x |
    | 32 | 3,800 | 3,757 | 1.01x |
 
+10. **Day 2 evening: our kernel vs the best kernel.** The int4 matmul was 3.9 of the 5.1 ms step
+   at 32 users. We researched how others do it (Marlin paper, GemLite, Triton issues) and tried four
+   tricks in our Triton kernel: magic-number dequantization, split-K tuning, loop pipelining, fp32
+   FMA. Together about 8%. vLLM's Marlin kernel (hand-written CUDA) was 23% faster than our best.
+   So we kept our kernel only where it wins (1-user o/down matrices) and use Marlin elsewhere, and
+   plain bf16 for the tiny PLE matrices. The honest framing: we don't win by out-writing Marlin; we
+   win by scheduling, graphs and a narrow engine, and we use the best kernel for each matrix.
+   (Result of the full benchmark: pending.)
+
 ## Quotable lessons
 - **Decode is a memory problem, not a maths problem.** At batch 1 the L40S needs 5.3 ms to read
   the weights and 0.013 ms to do the maths (~400x).
@@ -104,7 +113,10 @@ on a B200, with ~1 week and ~$1,000s of compute
 - **Read the checkpoint config.** One line (`ignore: [lm_head]`) pointed at a ~36% speed-up nobody
   was taking.
 - **Benchmarks lie in small ways.** Microbenchmarks showed more than 864 GB/s because the test
-  matrix stayed in the 96 MB L2 cache.
+  matrix stayed in the 96 MB L2 cache. It happened twice: on day 2 evening bf16 "beat" int4 at
+  2.2 TB/s until each timed call got its own copy of the weights.
+- **Know when to stop writing your own kernel.** Four well-researched Triton tricks: 8%. Marlin's
+  offline layout + async copies: 23% more. Pick the best kernel per matrix and move on.
 - **Profile before you build.** We were about to write an attention kernel; the profile said the
   scheduler was the problem. The fix was copying vLLM's idea, not out-engineering it.
 - **Time it the way it runs.** Our first kernel benchmark measured CPU launch overhead (95 us flat
@@ -125,6 +137,8 @@ on a B200, with ~1 week and ~$1,000s of compute
 - One GPU type (L40S), one model, one workload shape (~1,100-token prompts, 256 output tokens,
   greedy). At 32 users we are only 1% ahead: a tie within noise. Our gains come from a narrower
   engine (one model, text only, max 32 users, 4K context), not from beating vLLM's generality.
+- With `--marlin` we use vLLM's Marlin kernel for most decode matmuls, so the kernel-level
+  speed there is vLLM's, not ours.
 - We use FP8 for prompt processing; vLLM QAT does not. Accuracy measured equal, but it is a
   difference in numerics.
 - GSM8K-100 has about ±5 points of noise. The QAT checkpoint costs about 3–6 points vs bf16 (near
@@ -140,7 +154,7 @@ on a B200, with ~1 week and ~$1,000s of compute
   - The fix was Modal's recipe: CUDA devel image + `add_python`.
 
 ## Still to do (day 2)
-- Our int4 matmul kernel at 32 users runs at ~410 GB/s (floor 864): ~3.6 of the 5.1 ms step.
+- Finish the Marlin integration: compile/graph check, then the full benchmark (`ours-batch-fp8-marlin`).
 - Deeper fusion (toward a per-layer "megakernel").
 - An H100 run for the headline numbers.
 - Optionally Gemma's MTP speculative decoding (+30% per Google).
