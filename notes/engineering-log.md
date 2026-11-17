@@ -591,3 +591,17 @@ event-loop wake-up per token) share the GIL, and CPython lets a thread hold it f
 (`sys.getswitchinterval()`) before switching. Fix: switch interval 0.5 ms, one hand-off per user
 per step, one SSE event per step (the benchmark counts tokens from `usage`, so this does not change
 the measurement; vLLM has the same `stream_interval` idea).
+
+### Result after the host fixes (`results/m2_ours-batch-fp8_L40S_b4.json`): we pass vLLM everywhere
+| Users | b3 | **b4** | vLLM QAT | ours / vLLM |
+|---|---|---|---|---|
+| 1 | 298 tok/s (TPOT 3.25 ms, TTFT 29 ms) | **330 tok/s (TPOT 2.93 ms, TTFT 28 ms)** | 206 (TPOT 4.74, TTFT 34) | **1.60x** |
+| 8 | 1,479 (TTFT 123 ms) | **1,717 (TTFT 113 ms)** | 1,442 (TTFT 129) | **1.19x** |
+| 32 | 3,161 (TTFT 154 ms, TPOT 9.20) | **3,800 (TTFT 138 ms, TPOT 7.65)** | 3,757 (TTFT 202, TPOT 7.65) | **1.01x** |
+
+- Agreement 91.0% (vLLM QAT 91.2%), GSM8K 67% (vLLM 68%).
+- Host bookkeeping at 32 users: **1.56 s → 0.58 s**. Even the 1-user TPOT improved (3.25 → 2.93 ms):
+  the GIL wait was there all along.
+- Server startup with a warm compile cache in the Modal volume: **434 s** (was 1,907 s cold).
+- Remaining time at 32 users (6.43 s busy): mixed steps 2.52 s, decode 3.33 s (5.1 ms per step,
+  of which ~3.6 ms is our int4 matmul kernel at ~410 GB/s), host 0.58 s.

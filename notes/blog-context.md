@@ -81,6 +81,20 @@ on a B200, with ~1 week and ~$1,000s of compute
    | 8 | 1,151 | **1,407** | 1,442 |
    | 32 | 1,888 | **2,779** | 3,757 |
    Time to first token at 32 users: 856 → 199 ms (vLLM: 202). Accuracy unchanged.
+9. **Day 2 afternoon: past vLLM at every load.** (The human: "no H100, make it better on the L40S.")
+   - Our own Triton flash-decode kernel for the 7 long-context layers: 203 → 40 us per layer at 32 users.
+   - FP8 for prompt-chunk matmuls. First try was 2.5x *slower* than BF16; the fix was one flag
+     (`use_fast_accum=True`), then 1.2x faster with no accuracy loss.
+   - CUDA graphs for the mixed step (it was CPU-bound: ~1,000 kernel launches).
+   - The biggest single surprise: **20% of the time the GPU waited for Python's GIL**. The web
+     thread and the GPU thread share it, and CPython hands it over only every 5 ms. One line
+     (`sys.setswitchinterval(0.0005)`) plus batching the per-token hand-offs took 32 users from
+     3,161 to 3,800 tok/s.
+   | Users | Ours | vLLM QAT | |
+   |---|---|---|---|
+   | 1 | 330 tok/s/user | 206 | 1.60x |
+   | 8 | 1,717 | 1,442 | 1.19x |
+   | 32 | 3,800 | 3,757 | 1.01x |
 
 ## Quotable lessons
 - **Decode is a memory problem, not a maths problem.** At batch 1 the L40S needs 5.3 ms to read
@@ -93,6 +107,10 @@ on a B200, with ~1 week and ~$1,000s of compute
   matrix stayed in the 96 MB L2 cache.
 - **Profile before you build.** We were about to write an attention kernel; the profile said the
   scheduler was the problem. The fix was copying vLLM's idea, not out-engineering it.
+- **Time it the way it runs.** Our first kernel benchmark measured CPU launch overhead (95 us flat
+  for every matrix size). Timing CUDA graphs gave the real numbers.
+- **One flag can be 3x.** FP8 without `use_fast_accum` was slower than BF16.
+- **The GIL is a GPU problem.** 20% of GPU time was lost to two Python threads taking turns.
 - **Compilers hide costs.** One indexing detail made Inductor copy 830 MB per step (20% of the time).
 - **Gate every change on accuracy**, with tests that can't cascade (teacher-forced agreement) and
   tests that measure capability (GSM8K).
@@ -104,8 +122,11 @@ on a B200, with ~1 week and ~$1,000s of compute
   - asking what it saves in dollars
 
 ## Honest limitations (put these in the post)
-- One GPU type (L40S), one model. We win single-user speed (1.5x) and tie at 8 users; at 32
-  users vLLM is still 1.35x ahead on total throughput.
+- One GPU type (L40S), one model, one workload shape (~1,100-token prompts, 256 output tokens,
+  greedy). At 32 users we are only 1% ahead: a tie within noise. Our gains come from a narrower
+  engine (one model, text only, max 32 users, 4K context), not from beating vLLM's generality.
+- We use FP8 for prompt processing; vLLM QAT does not. Accuracy measured equal, but it is a
+  difference in numerics.
 - GSM8K-100 has about ±5 points of noise. The QAT checkpoint costs about 3–6 points vs bf16 (near
   the noise floor). Our int4 lm_head adds nothing measurable on top.
 - TTFT is 38–40 ms vs vLLM's 34 ms. Our prefill is eager PyTorch.
@@ -119,8 +140,7 @@ on a B200, with ~1 week and ~$1,000s of compute
   - The fix was Modal's recipe: CUDA devel image + `add_python`.
 
 ## Still to do (day 2)
-- Close the rest of the 32-user gap: a real decode-attention kernel, smaller chunks when many
-  users are waiting.
+- Our int4 matmul kernel at 32 users runs at ~410 GB/s (floor 864): ~3.6 of the 5.1 ms step.
 - Deeper fusion (toward a per-layer "megakernel").
 - An H100 run for the headline numbers.
 - Optionally Gemma's MTP speculative decoding (+30% per Google).
