@@ -69,8 +69,18 @@ on a B200, with ~1 week and ~$1,000s of compute
    | 32 | 1,888 | 3,757 |
    The cause is visible: our prefill is one request at a time (TTFT 856 ms at 32 users), and our
    attention is not a real decode kernel. vLLM's years of serving work (chunked prefill, paged
-   attention) matter exactly here. Honest takeaway: **a one-day engine can win single-user latency;
-   multi-user serving is where mature engines earn their keep.**
+   attention) matter exactly here.
+8. **Day 2: measure, then copy the right idea.** Profiling showed our batched decode step (6.0 ms
+   at 32 users) was already faster than vLLM's; the loss was the scheduler freezing everyone
+   while a prompt ran alone. We built vLLM's chunked prefill: one pass = a token for every user +
+   a 480-token piece of a new prompt. Profiling the new step found two invisible costs: the
+   compiler copying whole 138 MB caches (a view-vs-tensor indexing detail), and 288-row matrix
+   multiplies wasting a nearly empty 256-row tile. After fixes:
+   | Users | Day 1 | Day 2 | vLLM QAT |
+   |---|---|---|---|
+   | 8 | 1,151 | **1,407** | 1,442 |
+   | 32 | 1,888 | **2,779** | 3,757 |
+   Time to first token at 32 users: 856 → 199 ms (vLLM: 202). Accuracy unchanged.
 
 ## Quotable lessons
 - **Decode is a memory problem, not a maths problem.** At batch 1 the L40S needs 5.3 ms to read
@@ -81,6 +91,9 @@ on a B200, with ~1 week and ~$1,000s of compute
   was taking.
 - **Benchmarks lie in small ways.** Microbenchmarks showed more than 864 GB/s because the test
   matrix stayed in the 96 MB L2 cache.
+- **Profile before you build.** We were about to write an attention kernel; the profile said the
+  scheduler was the problem. The fix was copying vLLM's idea, not out-engineering it.
+- **Compilers hide costs.** One indexing detail made Inductor copy 830 MB per step (20% of the time).
 - **Gate every change on accuracy**, with tests that can't cascade (teacher-forced agreement) and
   tests that measure capability (GSM8K).
 - **The human's role** is to set the goal, the rules and the budget, and to judge whether a result
@@ -91,8 +104,8 @@ on a B200, with ~1 week and ~$1,000s of compute
   - asking what it saves in dollars
 
 ## Honest limitations (put these in the post)
-- One GPU type (L40S), one model. We win single-user speed; at 8 and 32 users vLLM is 1.25x and
-  2x ahead on total throughput.
+- One GPU type (L40S), one model. We win single-user speed (1.5x) and tie at 8 users; at 32
+  users vLLM is still 1.35x ahead on total throughput.
 - GSM8K-100 has about ±5 points of noise. The QAT checkpoint costs about 3–6 points vs bf16 (near
   the noise floor). Our int4 lm_head adds nothing measurable on top.
 - TTFT is 38–40 ms vs vLLM's 34 ms. Our prefill is eager PyTorch.
@@ -106,7 +119,8 @@ on a B200, with ~1 week and ~$1,000s of compute
   - The fix was Modal's recipe: CUDA devel image + `add_python`.
 
 ## Still to do (day 2)
-- Close the batching gap: batched/chunked prefill and a flash-decode attention kernel.
+- Close the rest of the 32-user gap: a real decode-attention kernel, smaller chunks when many
+  users are waiting.
 - Deeper fusion (toward a per-layer "megakernel").
 - An H100 run for the headline numbers.
 - Optionally Gemma's MTP speculative decoding (+30% per Google).

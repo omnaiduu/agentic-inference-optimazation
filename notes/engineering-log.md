@@ -475,3 +475,58 @@ and used B times.
     The compile cache in the Modal volume should cut this next time.
 - **Day-2 fixes, in order of expected payoff:** batched/chunked prefill, a flash-decode attention
   kernel over all slots, then re-measure against vLLM.
+
+## Milestone 3c (day 2): chunked prefill, closing the multi-user gap
+
+### Step 0: measure first (`aio/m3b_profile.py`, L40S, ~1,100-token context)
+| What | Time |
+|---|---|
+| batched decode step, B = 1 / 8 / 32 (GPU only, CUDA graphs) | 3.06 / 4.01 / **6.01 ms** |
+| same step seen through the server at 32 users (day 1) | 13.6 ms |
+| one 1,100-token prompt prefill (eager, alone) | 49 ms |
+
+- **The decode kernels were fine:** 6.0 ms for 32 users beats vLLM's served 7.65 ms.
+- **The scheduler was the problem:** 96 prompts × 49 ms ≈ 4.7 s of a 13 s run, with every other
+  user frozen. Plus O(n²) streaming detokenization competing for the GIL.
+
+### Fix: chunked prefill in a mixed step (vLLM's V1 scheduler idea, confirmed in its docs via Exa)
+- One forward pass = 1 decode token for every active user **plus** the next C prompt tokens of one
+  new request, which lives in a **staging slot** (slot 32) until its last chunk is done, then is
+  copied into the batch. Every Linear runs once on all B + C rows, so the weights are read once.
+- **Sliding-window layers with chunks:** a chunk attends over `[old ring (512) ++ the chunk]`.
+  The chunk is written into the ring only after all 35 layers ran, because layers 15–34 read
+  layer 13's ring and must still see the old entries. Padded chunk tokens are masked out of the
+  ring write with `torch.where`.
+- Incremental detokenization (vLLM's prefix/read-offset method) in the streaming server.
+
+### Two performance bugs found by profiling the mixed step (20.4 ms → 13.4 ms for the same work)
+1. **Hidden whole-cache copies (20% of the step).** Writing `cache[slot_int, positions] = k`
+   in a compiled function = select a *view*, then index_put into it. Inductor turned that into
+   a copy of the whole 138 MB cache tensor, 6 times per step. Using a tensor slot index
+   (`cache[slot_tensor, positions] = k`, an index_put on the base tensor) removed it.
+2. **Tile quantization.** 256 prompt + 32 decode rows = 288 rows. cuBLAS's best kernels use
+   256-row tiles, so the 2nd tile was 89% empty. Chunk 224 (→ 256 rows) or 480 (→ 512 rows) fixes it.
+
+| Mixed step (31 users + chunk) | ms | prompt tokens per ms |
+|---|---|---|
+| 256 chunk, before fixes | 20.4 | 12.5 |
+| 224 chunk | 13.4 | 16.8 |
+| **480 chunk (chosen)** | **17.9** | **26.9** (whole-prompt eager prefill: 22.4) |
+
+Correctness check (`aio/m3b_check.py`): chunked path vs day-1 verified path, teacher-forced,
+with another long prompt being chunked in at the same time: **404/410 identical tokens**, the 2,117-
+token prompt (5 chunks) 64/64. Oracle agreement 91.2% vs 90.7%: no loss.
+
+### Result (L40S, same benchmark as day 1)
+| Users | Day 1 total tok/s | **Day 2 total tok/s** | vLLM QAT | TTFT p50 day 1 → day 2 (vLLM) |
+|---|---|---|---|---|
+| 1 | 281 | **295** (309 per user) | 206 | 54 → **41 ms** (34) |
+| 8 | 1,151 | **1,407** | 1,442 | 241 → **165 ms** (129) |
+| 32 | 1,888 | **2,779** | 3,757 | 856 → **199 ms** (202) |
+
+- Accuracy unchanged: agreement 91.2%, GSM8K 68% (vLLM QAT: 91.2% / 68%).
+- **32 users: +47% throughput, TTFT 4.3x lower and now equal to vLLM.** 8 users: tied with vLLM.
+- **Remaining gap at 32 users (74% of vLLM):** TPOT 10.3 ms vs vLLM 7.65. Decoders wait 17.9 ms
+  during each mixed step, and the decode-only step is 6.0 ms against a ~3 ms ideal; its
+  attention is generic cuBLAS batched matmuls (`wmma 32x32` kernels, ~3 ms of the step).
+- Startup is still ~32 min of compiling (24 decode graphs + 4 mixed-step shapes).
