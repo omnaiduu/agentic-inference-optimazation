@@ -84,23 +84,27 @@ def check(ref: dict, profile_only: bool = False) -> dict:
     for d in range(1, m.max_b):
         m.move_slot(0, d)
     out["mixed_ms"] = {}
-    for n in (0, 8, 31):
-        toks, poss = [5] * n, [ctx] * n
-        m.start_prefill()
-        m.mixed_step(toks, poss, other[:m.chunk], 0)
-        torch.cuda.synchronize()
-        t0 = time.perf_counter()
-        for i in range(20):
-            m.mixed_step(toks, poss, other[:m.chunk], 0)
-        ms = (time.perf_counter() - t0) / 20 * 1000
-        out["mixed_ms"][n] = ms
-        print(f"===== mixed step: {n:2d} decode rows + {m.chunk} prompt tokens: {ms:.2f} ms", flush=True)
+    for C in (224, 480):
+        m.chunk = C
+        for n in (0, 31):
+            toks, poss = [5] * n, [ctx] * n
+            m.start_prefill()
+            m.mixed_step(toks, poss, other[:C], 0)
+            torch.cuda.synchronize()
+            t0 = time.perf_counter()
+            for i in range(20):
+                m.mixed_step(toks, poss, other[:C], 0)
+            ms = (time.perf_counter() - t0) / 20 * 1000
+            out["mixed_ms"][f"{C}_{n}"] = ms
+            print(f"===== mixed step: {n:2d} decode rows + {C} prompt tokens: {ms:.2f} ms "
+                  f"({C / ms:.1f} prompt tok/ms)", flush=True)
+    m.chunk = 224
     # where do the 20 ms go? GPU kernel time vs wall time, top kernels
     from aio.m3b_profile import kernel_table
     with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU,
                                             torch.profiler.ProfilerActivity.CUDA]) as prof:
         for _ in range(5):
-            m.mixed_step([5] * 31, [ctx] * 31, other[:m.chunk], 0)
+            m.mixed_step([5] * 31, [ctx] * 31, other[:224], 0)
         torch.cuda.synchronize()
     print("\n===== mixed step kernel breakdown (per step)", flush=True)
     out["mixed_kernels"] = kernel_table(prof, 5, n=25)

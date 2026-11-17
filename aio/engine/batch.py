@@ -28,10 +28,10 @@ BATCH_SIZES = (1, 2, 4, 8, 16, 32)
 
 
 class BatchedGemma4(Gemma4E2B):
-    def __init__(self, *args, max_batch: int = 32, chunk: int = 256, **kw):
+    def __init__(self, *args, max_batch: int = 32, chunk: int = 224, **kw):
         super().__init__(*args, **kw)
         self.max_b = max_batch
-        self.chunk = chunk                       # prefill chunk size (must be <= the 512 window)
+        self.chunk = chunk                       # prefill chunk; 224 + 32 decode rows = 256 = one cuBLAS tile
         assert chunk <= self.window
         dev, dt = self.device, self.dtype
         n_slots = max_batch + 1                  # + 1 staging slot for the prompt being prefilled
@@ -161,6 +161,9 @@ class BatchedGemma4(Gemma4E2B):
         cmask = {True: self.kv_positions[:S][None, :] <= cp, False: (kp <= cp) & (kp > cp - win)}
         cslot = cpos % win
         cpos_w = cpos.clamp(max=self.max_len - 1)   # padded tail positions: junk, overwritten later
+        # Write with a TENSOR slot index (index_put on the whole cache). Writing through a view
+        # (cache[cs][...] with a python int) made Inductor copy whole 138 MB caches every step.
+        csr = torch.full_like(cpos, cs)
 
         fresh = {}
         for i in range(self.L):
@@ -178,8 +181,8 @@ class BatchedGemma4(Gemma4E2B):
                 self.bk[i][rows, idx] = k[:B]
                 self.bv[i][rows, idx] = v[:B]
                 if full:
-                    self.bk[i][cs, cpos_w] = k[B:]
-                    self.bv[i][cs, cpos_w] = v[B:]
+                    self.bk[i][csr, cpos_w] = k[B:]
+                    self.bv[i][csr, cpos_w] = v[B:]
                 fresh[i] = (k[B:], v[B:])
             src = self.kv_src[i]
             # decode attention (B rows over their own slots)
@@ -214,9 +217,9 @@ class BatchedGemma4(Gemma4E2B):
         for i in range(self.first_shared):
             if not self.is_full[i]:
                 kc, vc = fresh[i]
-                self.bk[i][cs, cslot] = torch.where(keep, kc, self.bk[i][cs, cslot])
-                self.bv[i][cs, cslot] = torch.where(keep, vc, self.bv[i][cs, cslot])
-        self.bring_pos[cs, cslot] = torch.where(cvalid, cpos, self.bring_pos[cs, cslot])
+                self.bk[i][csr, cslot] = torch.where(keep, kc, self.bk[i][csr, cslot])
+                self.bv[i][csr, cslot] = torch.where(keep, vc, self.bv[i][csr, cslot])
+        self.bring_pos[csr, cslot] = torch.where(cvalid, cpos, self.bring_pos[csr, cslot])
 
         xl = torch.cat([x[:B], x[B:].index_select(0, clast)])
         logits = linear(rms_norm(xl, W["norm.weight"], eps), self.lm_head)

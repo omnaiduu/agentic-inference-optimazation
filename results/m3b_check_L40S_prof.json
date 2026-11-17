@@ -1,0 +1,143 @@
+{
+ "cases": [],
+ "total": 0,
+ "same": 0,
+ "oracle_old": 0,
+ "oracle_new": 0,
+ "mixed_ms": {
+  "0": 19.218555300000162,
+  "8": 20.491140200000046,
+  "31": 20.43096649999967
+ },
+ "mixed_kernels": {
+  "total_us": 19181.309200000054,
+  "kernels": 1004.0,
+  "top": [
+   [
+    "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_256x128_32x3_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_256x128_32x3_tn_align8::Params)",
+    3791.266199999996,
+    20
+   ],
+   [
+    "triton_poi_fused_copy__31",
+    3355.5325999999955,
+    6
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_128x128_ldg8_f2f_stages_64x3_tn",
+    1877.4920000000177,
+    43
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_256x128_ldg8_f2f_stages_32x3_tn",
+    1412.3571999999936,
+    21
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_tn_align8::Params)",
+    1358.014599999991,
+    35
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_256x64_32x4_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_256x64_32x4_tn_align8::Params)",
+    889.1113999999964,
+    22
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x2_nn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x2_nn_align8::Params)",
+    787.734199999991,
+    7
+   ],
+   [
+    "ampere_bf16_s1688gemm_bf16_128x128_ldg8_f2f_stages_32x1_tn",
+    664.113600000026,
+    42
+   ],
+   [
+    "triton_poi_fused_copy__82",
+    528.0021999999948,
+    24
+   ],
+   [
+    "_gemm_kernel",
+    495.04199999999986,
+    1
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_nn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_nn_align8::Params)",
+    485.30780000001187,
+    28
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_128x64_ldg8_f2f_stages_32x6_tn",
+    442.7994000000147,
+    28
+   ],
+   [
+    "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x2_tn_align8::Params)",
+    367.9369999999855,
+    35
+   ],
+   [
+    "triton_per_fused__to_copy_add_cat_cos_mean_mul_neg_pow_sin_slice_unsqueeze_view_48",
+    219.9488000000122,
+    16
+   ],
+   [
+    "void cublasLt::splitKreduce_kernel<32, 16, int, __nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16, false, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplitKParams<float>, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, __nv_bfloat16*, float const*, float const*, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, void*, long, float*, int*, float*, float*, float const*, float const*, float const*, float const*, float const*)",
+    217.2163999999825,
+    70
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_64x64_ldg8_f2f_stages_64x5_nn",
+    206.26600000002037,
+    28
+   ],
+   [
+    "triton_per_fused__to_copy_add_cat_cos_mean_mul_neg_pow_sin_slice_unsqueeze_view_3",
+    171.80839999999282,
+    12
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_128x64_ldg8_f2f_stages_64x3_nn",
+    161.20399999999646,
+    7
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_20",
+    150.85480000000652,
+    34
+   ],
+   [
+    "ampere_bf16_s16816gemm_bf16_64x64_ldg8_f2f_stages_64x5_tn",
+    148.88979999999347,
+    35
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_15",
+    127.5969999999904,
+    35
+   ],
+   [
+    "triton_red_fused__to_copy_add_mean_mul_pow_21",
+    123.75059999998977,
+    34
+   ],
+   [
+    "triton_poi_fused_gelu_mul_split_52",
+    121.24220000000065,
+    20
+   ],
+   [
+    "triton_per_fused__softmax__to_copy_bitwise_and_bitwise_not_bmm_clone_gt_le_masked_fill_permute_prepare_softmax_online_sub_unsqueeze_view_12",
+    115.00819999999491,
+    28
+   ],
+   [
+    "triton_red_fused__softmax__to_copy_bitwise_not_bmm_clone_le_masked_fill_permute_prepare_softmax_online_slice_unsqueeze_view_35",
+    89.13299999999892,
+    7
+   ]
+  ]
+ }
+}
