@@ -21,7 +21,7 @@ app = modal.App("aio-m3b-check")
 
 
 @app.function(image=gpu_image, gpu=GPU, volumes=VOLUMES, timeout=3600)
-def check(ref: dict) -> dict:
+def check(ref: dict, profile_only: bool = False) -> dict:
     import time
 
     import torch
@@ -42,6 +42,8 @@ def check(ref: dict) -> dict:
     cases = ref["cases"]
     other = max(cases, key=lambda c: len(c["prompt_ids"]))["prompt_ids"]   # the long prompt
     out = {"cases": []}
+    if profile_only:
+        cases = []
     tot = same = hit_old = hit_new = 0
     with torch.inference_mode():
         for c in cases:
@@ -72,7 +74,8 @@ def check(ref: dict) -> dict:
             print(f"  prompt {len(p):5d} tok: old==new {s}/{len(t)}  oracle: old {ho} new {hn}", flush=True)
             out["cases"].append({"prompt_len": len(p), "n": len(t), "same": s, "oracle_old": ho, "oracle_new": hn})
     out.update(total=tot, same=same, oracle_old=hit_old, oracle_new=hit_new)
-    print(f"===== old==new {same}/{tot} = {same / tot:.1%} | oracle agreement: old {hit_old / tot:.1%}, "
+    if tot:
+        print(f"===== old==new {same}/{tot} = {same / tot:.1%} | oracle agreement: old {hit_old / tot:.1%}, "
           f"new {hit_new / tot:.1%}", flush=True)
 
     # speed: 31 decode rows + one 256-token chunk, at ~1,100 tokens of context
@@ -92,12 +95,23 @@ def check(ref: dict) -> dict:
         ms = (time.perf_counter() - t0) / 20 * 1000
         out["mixed_ms"][n] = ms
         print(f"===== mixed step: {n:2d} decode rows + {m.chunk} prompt tokens: {ms:.2f} ms", flush=True)
+    # where do the 20 ms go? GPU kernel time vs wall time, top kernels
+    from aio.m3b_profile import kernel_table
+    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU,
+                                            torch.profiler.ProfilerActivity.CUDA]) as prof:
+        for _ in range(5):
+            m.mixed_step([5] * 31, [ctx] * 31, other[:m.chunk], 0)
+        torch.cuda.synchronize()
+    print("\n===== mixed step kernel breakdown (per step)", flush=True)
+    out["mixed_kernels"] = kernel_table(prof, 5, n=25)
+    print(f"===== GPU kernel time per step: {out['mixed_kernels']['total_us'] / 1000:.2f} ms, "
+          f"{out['mixed_kernels']['kernels']:.0f} kernels", flush=True)
     commit_volumes()
     return out
 
 
 @app.local_entrypoint()
-def main():
+def main(profile_only: bool = False):
     ref = json.loads(pathlib.Path("results/s1_reference.json").read_text())
-    res = check.remote(ref)
-    pathlib.Path(f"results/m3b_check_{GPU}.json").write_text(json.dumps(res, indent=1))
+    res = check.remote(ref, profile_only)
+    pathlib.Path(f"results/m3b_check_{GPU}{'_prof' if profile_only else ''}.json").write_text(json.dumps(res, indent=1))

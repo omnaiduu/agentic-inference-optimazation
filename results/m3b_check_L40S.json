@@ -1,0 +1,69 @@
+{
+ "cases": [
+  {
+   "prompt_len": 21,
+   "n": 8,
+   "same": 8,
+   "oracle_old": 8,
+   "oracle_new": 8
+  },
+  {
+   "prompt_len": 21,
+   "n": 64,
+   "same": 64,
+   "oracle_old": 60,
+   "oracle_new": 60
+  },
+  {
+   "prompt_len": 22,
+   "n": 64,
+   "same": 63,
+   "oracle_old": 53,
+   "oracle_new": 54
+  },
+  {
+   "prompt_len": 17,
+   "n": 64,
+   "same": 63,
+   "oracle_old": 55,
+   "oracle_new": 56
+  },
+  {
+   "prompt_len": 27,
+   "n": 64,
+   "same": 62,
+   "oracle_old": 59,
+   "oracle_new": 61
+  },
+  {
+   "prompt_len": 23,
+   "n": 64,
+   "same": 63,
+   "oracle_old": 59,
+   "oracle_new": 58
+  },
+  {
+   "prompt_len": 17,
+   "n": 18,
+   "same": 18,
+   "oracle_old": 14,
+   "oracle_new": 14
+  },
+  {
+   "prompt_len": 2117,
+   "n": 64,
+   "same": 64,
+   "oracle_old": 64,
+   "oracle_new": 64
+  }
+ ],
+ "total": 410,
+ "same": 405,
+ "oracle_old": 372,
+ "oracle_new": 375,
+ "mixed_ms": {
+  "0": 19.25233285000445,
+  "8": 20.51820419999899,
+  "31": 20.503888499996492
+ }
+}
