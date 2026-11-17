@@ -1,10 +1,12 @@
 """OpenAI-compatible server with CONTINUOUS BATCHING for our engine.
 
 One scheduler thread owns the GPU and loops:
-  1. admit waiting requests into free slots (prefill each one, stream its first token),
-  2. run ONE batched decode chunk (k tokens) for every active request,
+  1. if a prompt is waiting: run a MIXED step = one decode token for every active request + the
+     next chunk (256 tokens) of that prompt, in one forward pass (chunked prefill, like vLLM).
+     When its last chunk is done, the request joins the active batch.
+  2. otherwise: run one batched decode chunk (k tokens, CUDA graphs) for every active request,
   3. stream the new tokens, retire finished requests and compact the slots.
-New requests therefore join between chunks instead of waiting for others to finish.
+Decoders keep producing tokens while new prompts are processed, instead of freezing.
 
   python -m aio.engine.server_batch --model-dir DIR --quant-dir QDIR --lm-head-bits 4
 """
@@ -29,6 +31,7 @@ class Req:
     ignore_eos: bool
     emit: callable                       # thread-safe: emit(token or None)
     done: int = 0
+    off: int = 0                         # how many prompt tokens are already prefilled
     pos: int = 0
     last: int = 0
     finished: bool = False
@@ -43,18 +46,20 @@ def main():
     ap.add_argument("--port", type=int, default=8001)
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--max-batch", type=int, default=32)
-    ap.add_argument("--chunk", type=int, default=4)
+    ap.add_argument("--chunk", type=int, default=4)             # decode tokens per graph launch
+    ap.add_argument("--prefill-chunk", type=int, default=256)   # prompt tokens per mixed step
     args = ap.parse_args()
 
     t0 = time.time()
     tok = AutoTokenizer.from_pretrained(args.model_dir)
     model = BatchedGemma4(args.model_dir, max_len=args.max_len, quant_dir=args.quant_dir,
-                          lm_head_bits=args.lm_head_bits, max_batch=args.max_batch)
+                          lm_head_bits=args.lm_head_bits, max_batch=args.max_batch,
+                          chunk=args.prefill_chunk)
     model.enable_compile()
-    model.capture_graphs()                # single-sequence graphs (used by teacher-forced eval)
     model.capture_batch_graphs()
-    print(f"ready: weights + {len(model.graphs)} single + {len(model.bgraphs)} batch graphs "
-          f"in {time.time() - t0:.0f}s", flush=True)
+    model.warm_mixed()
+    print(f"ready: weights + {len(model.bgraphs)} batch graphs + mixed step in {time.time() - t0:.0f}s",
+          flush=True)
 
     engine_lock = threading.Lock()
     cond = threading.Condition()
@@ -68,33 +73,43 @@ def main():
 
     def scheduler():
         active: list[Req] = []
+        cur: Req | None = None                                   # request being prefilled
+        C = args.prefill_chunk
         while True:
             with cond:
-                while not waiting and not active:
+                while not waiting and not active and cur is None:
                     cond.wait()
-                new = []
-                while waiting and len(active) + len(new) < args.max_batch:
-                    new.append(waiting.pop(0))
+                if cur is None and waiting and len(active) < args.max_batch:
+                    cur = waiting.pop(0)
+                    model.start_prefill()
             with engine_lock:
-                for r in new:                                    # admit (prefill) new requests
-                    slot = len(active)
-                    first = model.prefill_into(slot, r.prompt)
-                    r.pos, r.last = len(r.prompt), first
-                    give(r, first)
-                    if r.finished:
-                        r.emit(None)
-                    else:
-                        active.append(r)
-                if not active:
-                    continue
-                k = args.chunk
-                steps = model.decode_batch([r.last for r in active], [r.pos for r in active], k)
-                for b, r in enumerate(active):
-                    for j in range(k):
-                        if not r.finished:
-                            give(r, steps[j][b])
-                    r.pos += k
-                    r.last = steps[k - 1][b]
+                if cur is not None:                              # mixed step: decode + prompt chunk
+                    piece = cur.prompt[cur.off:cur.off + C]
+                    nxt, first = model.mixed_step([r.last for r in active], [r.pos for r in active],
+                                                  piece, cur.off)
+                    for r, t in zip(active, nxt):
+                        give(r, t)
+                        r.pos += 1
+                        r.last = t
+                    cur.off += len(piece)
+                    if cur.off >= len(cur.prompt):               # prompt done: join the batch
+                        model.finish_prefill(len(active))
+                        cur.pos, cur.last = len(cur.prompt), first
+                        give(cur, first)
+                        if cur.finished:
+                            cur.emit(None)
+                        else:
+                            active.append(cur)
+                        cur = None
+                elif active:
+                    k = args.chunk
+                    steps = model.decode_batch([r.last for r in active], [r.pos for r in active], k)
+                    for b, r in enumerate(active):
+                        for j in range(k):
+                            if not r.finished:
+                                give(r, steps[j][b])
+                        r.pos += k
+                        r.last = steps[k - 1][b]
                 i = 0                                            # retire + compact
                 while i < len(active):
                     if active[i].finished:
@@ -132,11 +147,17 @@ def main():
                                       "usage": {"prompt_tokens": len(prompt_ids), "completion_tokens": len(out_ids)}})
         resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
         await resp.prepare(request)
-        text = ""
+        # Incremental detokenization (vLLM's method): decode only a small window of recent ids
+        # instead of the whole output on every token (that was O(n^2) and held the GIL).
+        prefix = read = 0
         while (t := await q.get()) is not None:
             out_ids.append(t)
-            new_text = tok.decode(out_ids, skip_special_tokens=True)
-            delta, text = new_text[len(text):], new_text
+            prefix_text = tok.decode(out_ids[prefix:read], skip_special_tokens=True)
+            new_text = tok.decode(out_ids[prefix:], skip_special_tokens=True)
+            if len(new_text) <= len(prefix_text) or new_text.endswith("\ufffd"):
+                continue
+            delta = new_text[len(prefix_text):]
+            prefix, read = read, len(out_ids)
             await resp.write(f"data: {json.dumps({'choices': [{'index': 0, 'text': delta}]})}\n\n".encode())
         usage = {"choices": [], "usage": {"prompt_tokens": len(prompt_ids), "completion_tokens": len(out_ids)}}
         await resp.write(f"data: {json.dumps(usage)}\n\ndata: [DONE]\n\n".encode())
@@ -144,9 +165,10 @@ def main():
         return resp
 
     def teacher_forced(prompt_ids, target_ids):
-        """Oracle agreement through the BATCHED decode path (batch of 1, slot 0)."""
+        """Oracle agreement through the CHUNKED prefill + batched decode path (slot 0).
+        Only meaningful on an idle server (the accuracy gate runs before any load)."""
         with engine_lock:
-            preds = [model.prefill_into(0, prompt_ids)]
+            preds = [model.prefill_chunked(0, prompt_ids)]
             pos = len(prompt_ids)
             for t in target_ids[:-1]:
                 preds.append(model.decode_batch([t], [pos], 1)[0][0])
