@@ -48,6 +48,7 @@ def main():
     ap.add_argument("--max-batch", type=int, default=32)
     ap.add_argument("--chunk", type=int, default=4)             # decode tokens per graph launch
     ap.add_argument("--prefill-chunk", type=int, default=480)   # prompt tokens per mixed step
+    ap.add_argument("--fp8-prefill", action="store_true")       # FP8 matmuls for prompt chunks
     args = ap.parse_args()
 
     t0 = time.time()
@@ -55,6 +56,8 @@ def main():
     model = BatchedGemma4(args.model_dir, max_len=args.max_len, quant_dir=args.quant_dir,
                           lm_head_bits=args.lm_head_bits, max_batch=args.max_batch,
                           chunk=args.prefill_chunk)
+    if args.fp8_prefill:
+        model.enable_fp8_prefill()
     model.enable_compile()
     model.capture_batch_graphs()
     model.warm_mixed()
@@ -71,22 +74,44 @@ def main():
         if r.done >= r.max_tokens or (not r.ignore_eos and t in EOS_IDS):
             r.finished = True
 
+    # Where does the scheduler's time go? Printed every time the server goes idle.
+    stats = {"mixed_s": 0.0, "mixed_n": 0, "decode_s": 0.0, "decode_n": 0, "rows": 0, "other_s": 0.0}
+
+    def report():
+        busy = stats["mixed_s"] + stats["decode_s"] + stats["other_s"]
+        if busy > 0:
+            print(f"[sched] busy {busy:.2f}s = mixed {stats['mixed_s']:.2f}s ({stats['mixed_n']} steps, "
+                  f"{stats['mixed_s'] / max(1, stats['mixed_n']) * 1000:.1f} ms) + decode {stats['decode_s']:.2f}s "
+                  f"({stats['decode_n']} launches of {args.chunk}, {stats['decode_s'] / max(1, stats['decode_n']) * 1000:.1f} ms, "
+                  f"avg rows {stats['rows'] / max(1, stats['decode_n']):.1f}) + host bookkeeping {stats['other_s']:.2f}s",
+                  flush=True)
+        for k in stats:
+            stats[k] = 0 if k.endswith("_n") or k == "rows" else 0.0
+
     def scheduler():
         active: list[Req] = []
         cur: Req | None = None                                   # request being prefilled
         C = args.prefill_chunk
         while True:
             with cond:
+                if not waiting and not active and cur is None:
+                    report()
                 while not waiting and not active and cur is None:
                     cond.wait()
                 if cur is None and waiting and len(active) < args.max_batch:
                     cur = waiting.pop(0)
                     model.start_prefill()
             with engine_lock:
+                t_it = time.perf_counter()
+                gpu_s = 0.0
                 if cur is not None:                              # mixed step: decode + prompt chunk
                     piece = cur.prompt[cur.off:cur.off + C]
+                    t0 = time.perf_counter()
                     nxt, first = model.mixed_step([r.last for r in active], [r.pos for r in active],
                                                   piece, cur.off)
+                    gpu_s = time.perf_counter() - t0
+                    stats["mixed_s"] += gpu_s
+                    stats["mixed_n"] += 1
                     for r, t in zip(active, nxt):
                         give(r, t)
                         r.pos += 1
@@ -103,7 +128,12 @@ def main():
                         cur = None
                 elif active:
                     k = args.chunk
+                    t0 = time.perf_counter()
                     steps = model.decode_batch([r.last for r in active], [r.pos for r in active], k)
+                    gpu_s = time.perf_counter() - t0
+                    stats["decode_s"] += gpu_s
+                    stats["decode_n"] += 1
+                    stats["rows"] += len(active)
                     for b, r in enumerate(active):
                         for j in range(k):
                             if not r.finished:
@@ -121,6 +151,7 @@ def main():
                         active.pop()
                     else:
                         i += 1
+                stats["other_s"] += time.perf_counter() - t_it - gpu_s
 
     threading.Thread(target=scheduler, daemon=True).start()
 

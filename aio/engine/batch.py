@@ -21,8 +21,15 @@ Design:
 import torch
 import torch.nn.functional as F
 
+from aio.engine import quant
+from aio.engine.attn import decode_attention
 from aio.engine.model import Gemma4E2B, rms_norm, rotate_half
-from aio.engine.quant import linear
+from aio.engine.quant import QLinear, linear
+
+# Our Triton flash-decode kernel wins for full-attention layers once many users share a step
+# (40 us vs 203 us at B=32: it reads only each user's real context instead of a 2,048 bucket);
+# for the 512-slot sliding rings and small batches the compiled einsum path is faster.
+KERNEL_MIN_B = 16
 
 BATCH_SIZES = (1, 2, 4, 8, 16, 32)
 
@@ -107,14 +114,17 @@ class BatchedGemma4(Gemma4E2B):
                 self.bk[i][rows, idx] = k
                 self.bv[i][rows, idx] = v
             src = self.kv_src[i]
-            if full:
-                K, V = self.bk[src][:B, :S], self.bv[src][:B, :S]
+            if full and B >= KERNEL_MIN_B:
+                a = decode_attention(q, self.bk[src], self.bv[src], pos)
             else:
-                K, V = self.bk[src][:B], self.bv[src][:B]
-            scores = torch.einsum("bhd,bsd->bhs", q, K).float()
-            scores = scores.masked_fill(~masks[full][:, None, :], float("-inf"))
-            probs = torch.softmax(scores, dim=-1).to(self.dtype)
-            a = torch.einsum("bhs,bsd->bhd", probs, V).reshape(B, self.n_heads * hd)
+                if full:
+                    K, V = self.bk[src][:B, :S], self.bv[src][:B, :S]
+                else:
+                    K, V = self.bk[src][:B], self.bv[src][:B]
+                scores = torch.einsum("bhd,bsd->bhs", q, K).float()
+                scores = scores.masked_fill(~masks[full][:, None, :], float("-inf"))
+                probs = torch.softmax(scores, dim=-1).to(self.dtype)
+                a = torch.einsum("bhs,bsd->bhd", probs, V).reshape(B, self.n_heads * hd)
             x = x + rms_norm(linear(a, w["self_attn.o_proj.weight"]), w["post_attention_layernorm.weight"], eps)
             h = rms_norm(x, w["pre_feedforward_layernorm.weight"], eps)
             gate, up = linear(h, w["gate_up"]).chunk(2, dim=-1)
@@ -186,13 +196,16 @@ class BatchedGemma4(Gemma4E2B):
                 fresh[i] = (k[B:], v[B:])
             src = self.kv_src[i]
             # decode attention (B rows over their own slots)
-            if full:
-                K, V = self.bk[src][:B, :S], self.bv[src][:B, :S]
+            if full and B >= KERNEL_MIN_B:
+                ad = decode_attention(q[:B], self.bk[src], self.bv[src], pos)
             else:
-                K, V = self.bk[src][:B], self.bv[src][:B]
-            sc = torch.einsum("bhd,bsd->bhs", q[:B], K).float()
-            sc = sc.masked_fill(~dmask[full][:, None, :], float("-inf"))
-            ad = torch.einsum("bhs,bsd->bhd", torch.softmax(sc, -1).to(self.dtype), V).reshape(B, H * hd)
+                if full:
+                    K, V = self.bk[src][:B, :S], self.bv[src][:B, :S]
+                else:
+                    K, V = self.bk[src][:B], self.bv[src][:B]
+                sc = torch.einsum("bhd,bsd->bhs", q[:B], K).float()
+                sc = sc.masked_fill(~dmask[full][:, None, :], float("-inf"))
+                ad = torch.einsum("bhs,bsd->bhd", torch.softmax(sc, -1).to(self.dtype), V).reshape(B, H * hd)
             # chunk attention (C rows over the staging slot)
             if full:
                 Kc, Vc = self.bk[src][cs, :S], self.bv[src][cs, :S]
@@ -225,6 +238,17 @@ class BatchedGemma4(Gemma4E2B):
         logits = linear(rms_norm(xl, W["norm.weight"], eps), self.lm_head)
         logits = torch.tanh(logits / self.softcap) * self.softcap
         return torch.argmax(logits, dim=-1)
+
+    def enable_fp8_prefill(self):
+        """FP8 copies of every int4 layer's weights, used for matmuls with > 64 rows (prompt chunks)."""
+        seen = set()
+        for d in [self.W, *self.layer_w]:
+            for w in d.values():
+                if isinstance(w, QLinear) and id(w) not in seen:
+                    quant.make_fp8(w)
+                    seen.add(id(w))
+        quant.FP8_PREFILL = True
+        torch.cuda.empty_cache()
 
     def start_prefill(self):
         self.bring_pos[self.max_b].fill_(-10**9)

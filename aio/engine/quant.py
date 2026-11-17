@@ -65,6 +65,27 @@ class QLinear:
         return self.packed.numel() * 4 + self.scale.numel() * 2
 
 
+# FP8 for big (prompt-chunk) matmuls: the L40S does 733 dense FP8 TFLOPS vs 362 for BF16.
+# Row-wise scales: one per activation row (token) and one per weight row (output channel);
+# torch._scaled_mm supports this on sm89 since PyTorch 2.7 (pytorch PR #145676).
+FP8_PREFILL = False
+F8 = torch.float8_e4m3fn
+F8_MAX = 448.0
+
+
+def make_fp8(w: "QLinear"):
+    d = w.dense.float()
+    w.s8 = (d.abs().amax(1).clamp(min=1e-8) / F8_MAX).contiguous()          # [N]
+    w.w8 = (d / w.s8[:, None]).to(F8)                                        # [N, K] row-major
+
+
+def linear_fp8(x: torch.Tensor, w: "QLinear") -> torch.Tensor:
+    xf = x.float()
+    sx = xf.abs().amax(1, keepdim=True).clamp(min=1e-8) / F8_MAX             # [M, 1]
+    xq = (xf / sx).to(F8)
+    return torch._scaled_mm(xq, w.w8.t(), scale_a=sx, scale_b=w.s8[None, :], out_dtype=torch.bfloat16)
+
+
 def linear(x: torch.Tensor, w) -> torch.Tensor:
     if isinstance(w, torch.Tensor):
         return torch.nn.functional.linear(x, w)
@@ -72,6 +93,8 @@ def linear(x: torch.Tensor, w) -> torch.Tensor:
         return gemv(x, w)
     if x.shape[0] <= 64:
         return gemm_small_m(x, w)
+    if FP8_PREFILL and getattr(w, "w8", None) is not None and x.shape[0] % 16 == 0:
+        return linear_fp8(x, w)
     return torch.nn.functional.linear(x, w.dense)
 
 
