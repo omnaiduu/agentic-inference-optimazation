@@ -13,6 +13,7 @@ Decoders keep producing tokens while new prompts are processed, instead of freez
 import argparse
 import asyncio
 import json
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -29,13 +30,14 @@ class Req:
     prompt: list[int]
     max_tokens: int
     ignore_eos: bool
-    emit: callable                       # thread-safe: emit(token or None)
+    emit: callable                       # thread-safe: emit(list of tokens, or None = finished)
     done: int = 0
     off: int = 0                         # how many prompt tokens are already prefilled
     pos: int = 0
     last: int = 0
     finished: bool = False
     out: list[int] = field(default_factory=list)
+    pending: list[int] = field(default_factory=list)   # tokens produced this step, not yet sent
 
 
 def main():
@@ -70,7 +72,7 @@ def main():
     waiting: list[Req] = []
 
     def give(r: Req, t: int):
-        r.emit(t)
+        r.pending.append(t)
         r.done += 1
         if r.done >= r.max_tokens or (not r.ignore_eos and t in EOS_IDS):
             r.finished = True
@@ -88,6 +90,15 @@ def main():
                   flush=True)
         for k in stats:
             stats[k] = 0 if k.endswith("_n") or k == "rows" else 0.0
+
+    def flush(r: Req):
+        """Hand this step's tokens to the web thread in ONE call (one event-loop wake-up per user
+        per step instead of one per token), then the end-of-stream marker if it finished."""
+        if r.pending:
+            r.emit(r.pending)
+            r.pending = []
+        if r.finished:
+            r.emit(None)
 
     def scheduler():
         active: list[Req] = []
@@ -122,9 +133,8 @@ def main():
                         model.finish_prefill(len(active))
                         cur.pos, cur.last = len(cur.prompt), first
                         give(cur, first)
-                        if cur.finished:
-                            cur.emit(None)
-                        else:
+                        flush(cur)
+                        if not cur.finished:
                             active.append(cur)
                         cur = None
                 elif active:
@@ -141,10 +151,11 @@ def main():
                                 give(r, steps[j][b])
                         r.pos += k
                         r.last = steps[k - 1][b]
+                for r in active:
+                    flush(r)
                 i = 0                                            # retire + compact
                 while i < len(active):
                     if active[i].finished:
-                        active[i].emit(None)
                         last = len(active) - 1
                         if i != last:
                             model.move_slot(last, i)
@@ -154,6 +165,10 @@ def main():
                         i += 1
                 stats["other_s"] += time.perf_counter() - t_it - gpu_s
 
+    # The scheduler thread (drives the GPU) and the web thread share Python's GIL. By default a
+    # thread may hold it for 5 ms before handing over, so the GPU sat idle waiting for the web
+    # thread (measured: 1.56 s of "host bookkeeping" in a 7.7 s, 32-user run). Switch every 0.5 ms.
+    sys.setswitchinterval(0.0005)
     threading.Thread(target=scheduler, daemon=True).start()
 
     async def completions(request: web.Request):
@@ -173,8 +188,8 @@ def main():
 
         out_ids: list[int] = []
         if not body.get("stream", False):
-            while (t := await q.get()) is not None:
-                out_ids.append(t)
+            while (ts := await q.get()) is not None:
+                out_ids.extend(ts)
             return web.json_response({"choices": [{"index": 0, "text": tok.decode(out_ids, skip_special_tokens=True)}],
                                       "usage": {"prompt_tokens": len(prompt_ids), "completion_tokens": len(out_ids)}})
         resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
@@ -182,8 +197,8 @@ def main():
         # Incremental detokenization (vLLM's method): decode only a small window of recent ids
         # instead of the whole output on every token (that was O(n^2) and held the GIL).
         prefix = read = 0
-        while (t := await q.get()) is not None:
-            out_ids.append(t)
+        while (ts := await q.get()) is not None:
+            out_ids.extend(ts)                   # one step's tokens -> one SSE event
             prefix_text = tok.decode(out_ids[prefix:read], skip_special_tokens=True)
             new_text = tok.decode(out_ids[prefix:], skip_special_tokens=True)
             if len(new_text) <= len(prefix_text) or new_text.endswith("\ufffd"):
