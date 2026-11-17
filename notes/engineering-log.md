@@ -659,3 +659,35 @@ Our checkpoint packs 8 values per int32 along K as `[N, K/8]` with a +8 offset; 
 `[K/8, N]` layout transposed, Marlin's `uint4b8` type. Scales `[N, K/32]` → `[K/32, N]` →
 `marlin_permute_scales`. All 141 matrices match the bf16 dequantized reference to 0.0037 max relative
 error (bf16 rounding level). Compile + CUDA-graph + accuracy run: in progress.
+
+## Handoff: where to resume (end of day 2, 2026-11-17)
+
+State of the code (branch `claude/compassionate-tesla-vrojki`):
+- Best measured server config: `ours-batch-fp8` (b4): 330 / 1,717 / 3,800 tok/s at 1 / 8 / 32 users
+  vs vLLM QAT 206 / 1,442 / 3,757. Accuracy 91.0% agreement, GSM8K 67%.
+- New, not yet benchmarked end to end: `ours-batch-fp8-marlin` (`server_batch --fp8-prefill --marlin`).
+  Dispatch lives in `aio/engine/quant.py::linear`. Every int4 matrix is covered by Marlin or bf16.
+  Conversion verified (141 matrices, max rel. error 0.0034). The real-model check
+  (`modal run -m aio.m3b_check --marlin`) was the last run of the day; its output is in
+  `results/m3e_check_L40S.json` if it finished.
+- Experimental knobs in our Triton kernel, off by default: `quant.DQ` (1 = magic-number dequant,
+  +3%), `quant.LS` (tl.range pipelining, ~0%). Both must be passed explicitly to the kernel:
+  torch.compile's Triton wrapper drops defaulted constexpr arguments (this crashed the compiled
+  engine once).
+
+Commands for the next session:
+- Full race with Marlin (~$1, 20–30 min): `modal run -m aio.m2_run --configs ours-batch-fp8-marlin --tag _b5`
+- Kernel microbenchmarks (~$0.15–0.25 each): `modal run -m aio.m3e_bench --m 32` (`--quick` for fewer variants)
+
+Expected from the kernel numbers (not yet measured end to end): ~1.8x / ~1.4x / ~1.15x vLLM at
+1 / 8 / 32 users.
+
+Next levers, in order of value per dollar:
+1. The mixed (prompt-chunk) step: 13 ms each, ~40% of busy time at 32 users. Ideas: fuse the small
+   elementwise ops, smaller chunks when many users decode, profile it like m3b_profile.
+2. Gemma's MTP speculative decoding: helps 1–8 users most. Google's +30% claim is unverified here.
+3. Host overhead (~9% at 32 users).
+
+Budget: $13.33 spent of $20 at the end of day 2 (day 1 $7.08, day 2 $6.25 before the last check).
+Security: the Modal token pasted in chat on day 1 is still in `/root/.modal.toml` only (never in the
+repo). Rotate it.
