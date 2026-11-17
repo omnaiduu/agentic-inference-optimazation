@@ -60,8 +60,9 @@ def main():
         model.enable_fp8_prefill()
     model.enable_compile()
     model.capture_batch_graphs()
-    model.warm_mixed()
-    print(f"ready: weights + {len(model.bgraphs)} batch graphs + mixed step in {time.time() - t0:.0f}s",
+    model.capture_mixed_graphs()
+    print(f"ready: weights + {len(model.bgraphs)} batch graphs + {len(model.mgraphs)} mixed graphs "
+          f"in {time.time() - t0:.0f}s",
           flush=True)
 
     engine_lock = threading.Lock()

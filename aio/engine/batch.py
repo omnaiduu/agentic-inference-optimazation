@@ -55,6 +55,13 @@ class BatchedGemma4(Gemma4E2B):
         self.bgraphs: dict[tuple[int, int], torch.cuda.CUDAGraph] = {}
         self.bstep_fn = self.bforward
         self.mstep_fn = self.mforward
+        # mixed-step graph I/O: one packed input buffer (one host->device copy per step)
+        C = chunk
+        self.m_in_cpu = torch.zeros(2 * max_batch + 3 * C + 1, dtype=torch.long, pin_memory=True)
+        self.m_in = torch.zeros(2 * max_batch + 3 * C + 1, dtype=torch.long, device=dev)
+        self.m_out = torch.zeros(max_batch + 1, dtype=torch.long, device=dev)
+        self.mgraphs: dict = {}
+        self.mpool = torch.cuda.graph_pool_handle()
 
     # ------------------------------------------------------------------ slots
     @torch.inference_mode()
@@ -259,21 +266,61 @@ class BatchedGemma4(Gemma4E2B):
     @torch.inference_mode()
     def mixed_step(self, toks: list[int], poss: list[int], chunk: list[int], start: int):
         """Decode one token for the first len(toks) slots AND prefill `chunk` (prompt positions
-        start..start+len-1) into the staging slot. Returns (decode tokens, chunk prediction)."""
-        n, B, C, dev = len(toks), self.max_b, self.chunk, self.device
+        start..start+len-1) into the staging slot. Returns (decode tokens, chunk prediction).
+        Uses a captured CUDA graph when one exists for this attention bucket: the step launches
+        ~1,000 kernels, and without a graph the CPU cannot launch them as fast as the GPU runs them."""
+        n, B, C = len(toks), self.max_b, self.chunk
         assert 0 < len(chunk) <= C and n < B
-        tok = torch.zeros(B, dtype=torch.long)
-        pos = torch.zeros(B, dtype=torch.long)
-        tok[:n], pos[:n] = torch.tensor(toks, dtype=torch.long), torch.tensor(poss, dtype=torch.long)
-        ctok = torch.zeros(C, dtype=torch.long)
-        ctok[:len(chunk)] = torch.tensor(chunk, dtype=torch.long)
-        cpos = start + torch.arange(C)
-        cvalid = torch.arange(C) < len(chunk)
-        clast = torch.tensor([len(chunk) - 1])
         S = self._bbucket(max(max(poss, default=0), start + len(chunk) - 1))
-        out = self.mstep_fn(*(t.to(dev, non_blocking=True) for t in (tok, pos, ctok, cpos, cvalid, clast)), S)
-        out = out.tolist()
+        buf = self.m_in_cpu
+        buf.zero_()
+        buf[:n] = torch.tensor(toks, dtype=torch.long)
+        buf[B:B + n] = torch.tensor(poss, dtype=torch.long)
+        buf[2 * B:2 * B + len(chunk)] = torch.tensor(chunk, dtype=torch.long)
+        buf[2 * B + C:2 * B + 2 * C] = start + torch.arange(C)
+        buf[2 * B + 2 * C:2 * B + 2 * C + len(chunk)] = 1
+        buf[2 * B + 3 * C] = len(chunk) - 1
+        g = self.mgraphs.get((S, quant.FP8_PREFILL))
+        self.m_in.copy_(buf, non_blocking=True)
+        if g is not None:
+            g.replay()
+        else:
+            self._mixed_body(S)
+        out = self.m_out.tolist()
         return out[:n], out[B]
+
+    def _mixed_body(self, S: int):
+        B, C, v = self.max_b, self.chunk, self.m_in
+        out = self.mstep_fn(v[:B], v[B:2 * B], v[2 * B:2 * B + C], v[2 * B + C:2 * B + 2 * C],
+                            v[2 * B + 2 * C:2 * B + 3 * C].bool(), v[2 * B + 3 * C:], S)
+        self.m_out.copy_(out)
+
+    @torch.inference_mode()
+    def capture_mixed_graphs(self, buckets=(512, 1024, 2048, 4096)):
+        """One CUDA graph per attention bucket for the mixed step (for the current FP8 setting).
+        Capturing writes junk into the KV slots, so call this before serving."""
+        B, C = self.max_b, self.chunk
+        for S in buckets:
+            buf = self.m_in_cpu
+            buf.zero_()
+            buf[B:2 * B] = S - 1
+            buf[2 * B:2 * B + C] = 2
+            buf[2 * B + C:2 * B + 2 * C] = S - C + torch.arange(C)
+            buf[2 * B + 2 * C:2 * B + 3 * C] = 1
+            buf[2 * B + 3 * C] = C - 1
+            self.m_in.copy_(buf)
+            st = torch.cuda.Stream()
+            st.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(st):
+                for _ in range(2):
+                    self._mixed_body(S)
+            torch.cuda.current_stream().wait_stream(st)
+            g = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(g, pool=self.mpool):
+                self._mixed_body(S)
+            self.mgraphs[(S, quant.FP8_PREFILL)] = g
+        self.start_prefill()
+        self.bring_pos.fill_(-10**9)
 
     @torch.inference_mode()
     def prefill_chunked(self, slot: int, prompt_ids: list[int]) -> int:

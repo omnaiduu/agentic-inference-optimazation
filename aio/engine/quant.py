@@ -68,12 +68,17 @@ class QLinear:
 # FP8 for big (prompt-chunk) matmuls: the L40S does 733 dense FP8 TFLOPS vs 362 for BF16.
 # Row-wise scales: one per activation row (token) and one per weight row (output channel);
 # torch._scaled_mm supports this on sm89 since PyTorch 2.7 (pytorch PR #145676).
+# Measured on the L40S (aio/m3c_bench.py --parts fp8, 512 rows): row-wise FP8 is 2.5x SLOWER than
+# BF16 without fast accumulation and ~1.2-1.6x faster with it; small matrices stay faster in BF16.
 FP8_PREFILL = False
 F8 = torch.float8_e4m3fn
 F8_MAX = 448.0
+FP8_MIN_NK = 4096 * 1536            # only matrices at least this big get an FP8 copy
 
 
 def make_fp8(w: "QLinear"):
+    if w.N * w.K < FP8_MIN_NK:
+        return
     d = w.dense.float()
     w.s8 = (d.abs().amax(1).clamp(min=1e-8) / F8_MAX).contiguous()          # [N]
     w.w8 = (d / w.s8[:, None]).to(F8)                                        # [N, K] row-major
@@ -83,7 +88,8 @@ def linear_fp8(x: torch.Tensor, w: "QLinear") -> torch.Tensor:
     xf = x.float()
     sx = xf.abs().amax(1, keepdim=True).clamp(min=1e-8) / F8_MAX             # [M, 1]
     xq = (xf / sx).to(F8)
-    return torch._scaled_mm(xq, w.w8.t(), scale_a=sx, scale_b=w.s8[None, :], out_dtype=torch.bfloat16)
+    return torch._scaled_mm(xq, w.w8.t(), scale_a=sx, scale_b=w.s8[None, :], out_dtype=torch.bfloat16,
+                            use_fast_accum=True)
 
 
 def linear(x: torch.Tensor, w) -> torch.Tensor:

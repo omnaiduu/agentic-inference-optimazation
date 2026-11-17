@@ -75,6 +75,8 @@ def check(ref: dict) -> dict:
         out["oracle_old"] = hit_old / n
         for fp8 in (False, True):
             t0 = time.time()
+            quant.FP8_PREFILL = fp8
+            m.capture_mixed_graphs()                 # CUDA graphs of the mixed step for this setting
             news = [teacher_forced_new(c["prompt_ids"], c["output_ids"], fp8) for c in cases]
             same = sum(a == b for o, nw in zip(olds, news) for a, b in zip(o, nw))
             hit = sum(a == b for nw, c in zip(news, cases) for a, b in zip(nw, c["output_ids"]))
@@ -124,7 +126,7 @@ def check(ref: dict) -> dict:
             ms = (time.perf_counter() - t0) / 20 * 1000
             out["mixed_ms"]["fp8" if fp8 else "bf16"] = ms
             print(f"===== mixed step 31 rows + {m.chunk} prompt tokens, {'FP8' if fp8 else 'BF16'}: {ms:.2f} ms "
-                  f"(day-2 morning BF16: 17.85 ms)", flush=True)
+                  f"(no graph, this morning: BF16 17.85 ms, FP8 33.07 ms)", flush=True)
     commit_volumes()
     return out
 

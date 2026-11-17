@@ -53,7 +53,7 @@ def timeit(fn, reps=20):
 
 
 @app.function(image=gpu_image, gpu=GPU, volumes=VOLUMES, timeout=3600)
-def bench() -> dict:
+def bench(parts: str = "attn,gemm32,gemm512") -> dict:
     import torch
     import torch.nn.functional as F
     import triton
@@ -66,6 +66,9 @@ def bench() -> dict:
     dev, bf = "cuda", torch.bfloat16
     out = {"attn": {}, "gemm32": {}, "gemm512": {}}
 
+    parts = parts.split(",")
+    if "fp8" in parts:
+        return fp8_bench(timeit, SHAPES)
     # ---------------- (a) decode attention ----------------
     def ref_attn(q, K, V, pos, rp, S):
         B = q.shape[0]
@@ -160,7 +163,55 @@ def bench() -> dict:
     return out
 
 
+def fp8_bench(timeit, shapes) -> dict:
+    """512-row matmuls: BF16 vs FP8 with row-wise scales (CUTLASS on sm89) vs FP8 with one scale per
+    tensor (cuBLASLt), with/without fast accumulation. Includes the activation-quantization cost."""
+    import torch
+    import torch.nn.functional as F
+    F8, dev = torch.float8_e4m3fn, "cuda"
+    res, tot = {}, {}
+    q_row = torch.compile(lambda x: (lambda s: ((x.float() / s).to(F8), s))(
+        x.float().abs().amax(1, keepdim=True) / 448.0))
+    q_ten = torch.compile(lambda x: (lambda s: ((x.float() / s).to(F8), s))(
+        x.float().abs().amax().reshape(1, 1) / 448.0))
+    for name, (N, K, n_layers) in shapes.items():
+        if name == "lm_head":
+            continue
+        w = torch.randn(N, K, device=dev, dtype=torch.bfloat16) * 0.02
+        x = torch.randn(512, K, device=dev, dtype=torch.bfloat16)
+        sw_r = w.float().abs().amax(1) / 448.0
+        w8_r = (w.float() / sw_r[:, None]).to(F8)
+        sw_t = (w.float().abs().amax() / 448.0).reshape(1, 1)
+        w8_t = (w.float() / sw_t).to(F8)
+        ref = F.linear(x, w).float()
+        cands = {
+            "bf16": lambda: F.linear(x, w),
+            "row": lambda: (lambda q: torch._scaled_mm(q[0], w8_r.t(), scale_a=q[1], scale_b=sw_r[None, :],
+                                                       out_dtype=torch.bfloat16))(q_row(x)),
+            "row_fast": lambda: (lambda q: torch._scaled_mm(q[0], w8_r.t(), scale_a=q[1], scale_b=sw_r[None, :],
+                                                            out_dtype=torch.bfloat16, use_fast_accum=True))(q_row(x)),
+            "tensor": lambda: (lambda q: torch._scaled_mm(q[0], w8_t.t(), scale_a=q[1], scale_b=sw_t,
+                                                          out_dtype=torch.bfloat16))(q_ten(x)),
+            "tensor_fast": lambda: (lambda q: torch._scaled_mm(q[0], w8_t.t(), scale_a=q[1], scale_b=sw_t,
+                                                               out_dtype=torch.bfloat16, use_fast_accum=True))(q_ten(x)),
+        }
+        row = {}
+        for cname, fn in cands.items():
+            try:
+                err = ((fn().float() - ref).norm() / ref.norm()).item()
+                row[cname] = (timeit(fn), err)
+            except Exception as e:  # noqa: BLE001
+                row[cname] = (float("nan"), repr(e)[:80])
+            tot[cname] = tot.get(cname, 0.0) + row[cname][0] * n_layers
+        res[name] = row
+        print(f"{name:15s} " + "  ".join(f"{c} {t:6.1f}us (err {e if isinstance(e, str) else f'{e:.3f}'})"
+                                         for c, (t, e) in row.items()), flush=True)
+    print("===== per mixed step: " + ", ".join(f"{c} {t / 1000:.2f} ms" for c, t in tot.items()), flush=True)
+    return res
+
+
 @app.local_entrypoint()
-def main():
-    res = bench.remote()
-    pathlib.Path(f"results/m3c_bench_{GPU}.json").write_text(json.dumps(res, indent=1))
+def main(parts: str = "attn,gemm32,gemm512"):
+    res = bench.remote(parts)
+    tag = "_fp8" if parts == "fp8" else ""
+    pathlib.Path(f"results/m3c_bench_{GPU}{tag}.json").write_text(json.dumps(res, indent=1))
