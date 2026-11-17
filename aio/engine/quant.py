@@ -98,8 +98,9 @@ def linear_fp8(x: torch.Tensor, w: "QLinear") -> torch.Tensor:
 # split-K sweep, tl.range pipelining). It wins through an offline weight layout that matches the
 # tensor-core fragments, and cp.async multi-stage pipelining. Our checkpoint packs 8 int4 values
 # per int32 along K as [N, K/8] (+8 offset) = GPTQ's [K/8, N] layout transposed, so it converts.
-MARLIN_MIN_M = 2          # rows from which Marlin is used (set from the M = 1 / 8 / 32 benchmarks)
-SMALL_DENSE_NK = 1 << 20  # matrices smaller than this (the PLE gate/proj) run bf16 cuBLAS at M >= 2
+MARLIN_MIN_M = 2          # rows from which Marlin is used for every matrix (benchmarks at M = 1 / 8 / 32)
+MARLIN_M1_MAX_K = 1536    # at M = 1 Marlin wins only on K = hidden (qkv, gate_up, lm_head); our GEMV on o/down
+SMALL_DENSE_NK = 1 << 20  # matrices smaller than this (the PLE gate/proj) run bf16 cuBLAS at M <= 64
 _marlin = {}
 
 
@@ -132,11 +133,10 @@ def linear(x: torch.Tensor, w) -> torch.Tensor:
         return torch.nn.functional.linear(x, w)
     M = x.shape[0]
     if M <= 64:
-        if M >= MARLIN_MIN_M:
-            if getattr(w, "mq", None) is not None:
-                return linear_marlin(x, w)
-            if getattr(w, "small_dense", False):
-                return torch.nn.functional.linear(x, w.dense)
+        if getattr(w, "small_dense", False):      # PLE gate/proj: 0.2 MB, cuBLAS bf16 wins at every M
+            return torch.nn.functional.linear(x, w.dense)
+        if getattr(w, "mq", None) is not None and (M >= MARLIN_MIN_M or w.K <= MARLIN_M1_MAX_K):
+            return linear_marlin(x, w)
     if M == 1:
         return gemv(x, w)
     if M <= 64:

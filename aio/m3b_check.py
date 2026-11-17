@@ -37,6 +37,7 @@ def check(ref: dict, marlin: bool = False) -> dict:
     q_dir = snapshot_download(QAT_ID, revision=QAT_SHA, allow_patterns=pats)
     m = BatchedGemma4(bf_dir, quant_dir=q_dir, lm_head_bits=4, max_batch=32)
     m.enable_fp8_prefill()                 # builds the FP8 weight copies; toggled below
+    out = {"variants": {}}
     if marlin:
         m.enable_marlin()
         # conversion check: Marlin on our repacked weights vs the bf16 dequantized copy, every layer
@@ -53,7 +54,6 @@ def check(ref: dict, marlin: bool = False) -> dict:
         print(f"===== marlin conversion: {n_mar} matrices, worst max-error / max-value {worst:.4f}", flush=True)
         out["marlin_conv_err"] = worst
     m.enable_compile()
-    out = {"variants": {}}
     cases = ref["cases"]
     other = max(cases, key=lambda c: len(c["prompt_ids"]))["prompt_ids"]   # the long prompt
 
